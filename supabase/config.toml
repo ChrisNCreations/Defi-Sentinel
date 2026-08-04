@@ -1,0 +1,16 @@
+# Minimal Supabase local config — expand with `supabase init` / link when CLI is available.
+# Migrations live in supabase/migrations/ (Phase 1).
+
+project_id = "defi-sentinel"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323

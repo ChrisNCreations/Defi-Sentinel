@@ -1,0 +1,50 @@
+{
+  "$schema": "https://docs.keeperhub.com/schemas/workflow.json",
+  "name": "DeFi Sentinel — Aave Soft Rebalance / Safe-Exit",
+  "description": "Receives agent payload (action, repayPct, targetWallet, maxGasPriceGwei). Signing is Turnkey MPC inside KeeperHub — the agent never holds keys. Configure Aave Pool repay steps on Base Sepolia for real txs.",
+  "notes": [
+    "Agent POSTs { input: KeeperHubWorkflowInput } to /api/workflows/{id}/execute",
+    "input.signing is always turnkey_via_keeperhub",
+    "Wire Aave v3 repayWithATokens / repay in the visual builder for live on-chain effect",
+    "Respect maxGasPriceGwei from input in workflow gas policy"
+  ],
+  "trigger": {
+    "type": "Manual"
+  },
+  "expectedInput": {
+    "action": "SOFT_REBALANCE | SAFE_EXIT | NONE",
+    "repayPct": "number",
+    "network": "base-sepolia | eth-sepolia",
+    "chainId": 84532,
+    "targetWallet": "0x…",
+    "actorWallet": "0x…",
+    "healthFactor": "number",
+    "collateralUsd": "number",
+    "debtUsd": "number",
+    "repayUsd": "number",
+    "maxGasPriceGwei": "number",
+    "aavePoolAddress": "0x…",
+    "triggerType": "MANUAL_OPERATOR | SCHEDULED_CRON",
+    "executionId": "uuid",
+    "signing": "turnkey_via_keeperhub"
+  },
+  "suggestedSteps": [
+    {
+      "label": "Validate gas cap",
+      "actionType": "Condition",
+      "note": "Abort if network gas > input.maxGasPriceGwei"
+    },
+    {
+      "label": "Aave repay (soft)",
+      "actionType": "aave-v3/repay",
+      "when": "input.action === SOFT_REBALANCE",
+      "note": "Repay ~input.repayPct of debt for input.targetWallet"
+    },
+    {
+      "label": "Aave full exit",
+      "actionType": "aave-v3/repay + withdraw",
+      "when": "input.action === SAFE_EXIT",
+      "note": "May require multi-step due to 50% close factor"
+    }
+  ]
+}

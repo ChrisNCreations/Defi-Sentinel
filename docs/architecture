@@ -1,0 +1,568 @@
+# Architecture.md
+## Autonomous Treasury Rebalancer & Yield Sentinel (Testnet Phase)
+
+This document is the single source of truth for the technical architecture. It is written so that a coding assistant can implement the system without ambiguity.
+
+---
+
+## 1. Technology Stack
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Frontend | Next.js 15 (App Router) | UI + protected API routes |
+| Styling | Tailwind CSS + shadcn/ui | Component library |
+| Wallet Connection | wagmi + RainbowKit (or ConnectKit) | SIWE login |
+| Auth & Database | Supabase (PostgreSQL + Auth + RLS) | SIWE JWT, roles, audit logs, config |
+| AI Reasoning | Google Gemini 2.5 Flash | Gas/slippage estimation, NL understanding, human-readable audit text |
+| Execution Engine | KeeperHub (workflows + MCP) | Policy-constrained transaction execution |
+| Wallet | Turnkey MPC (via KeeperHub) | Non-custodial signing – no private keys ever leave Turnkey |
+| Blockchain | Base Sepolia & Ethereum Sepolia | Aave V3 Pool only |
+| Agent Runtime | Node.js + TypeScript (standalone daemon or long-running process) | Polling loop, formula engine, guardrails, Gemini client, KeeperHub client |
+| Package Manager | pnpm (recommended) or npm | Monorepo management |
+| Smart Contracts | Foundry (optional local helpers) | Not required for core agent – we call existing Aave V3 |
+
+---
+
+## 2. High-Level System Boundaries
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Next.js App                          │
+│  /app                                                       │
+│    ├── (auth) /login                                        │
+│    ├── (protected)                                          │
+│    │     ├── /dashboard                                     │
+│    │     ├── /audit                                         │
+│    │     ├── /actions                                       │
+│    │     ├── /admin                                         │
+│    │     └── /team                                          │
+│    └── /api/*          ← thin, no UI logic                  │
+│                                                             │
+│  Components  → pure UI, no DB or agent imports              │
+│  lib/supabase.ts → client helpers only                      │
+└────────────────────────────┬────────────────────────────────┘
+                             │ JWT + role-checked API calls
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Agent Daemon (Node/TS)                  │
+│  /src                                                       │
+│    ├── brain/          Gemini client                        │
+│    ├── formula/        Pure HF → action engine              │
+│    ├── guardrails/     Hard-limit & role validation         │
+│    ├── keeperhub/      MCP / HTTP client to KeeperHub       │
+│    ├── poller/         6-hour scheduled loop                │
+│    └── audit/          Writes structured records to Supabase│
+│                                                             │
+│  NEVER imports from frontend components or server actions   │
+└────────────────────────────┬────────────────────────────────┘
+                             │ Workflow payload
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              KeeperHub + Turnkey MPC                        │
+│  - Organization API key scopes Operators                    │
+│  - Workflow contains hard limits & allowed contracts        │
+│  - Turnkey signs under policy – agent never sees keys       │
+└────────────────────────────┬────────────────────────────────┘
+                             │ signed tx
+                             ▼
+                    Aave V3 Pool (Base / Eth Sepolia)
+```
+
+### Strict Separation Rules (Non-Negotiable)
+
+1. **API routes contain no UI logic**  
+   They only: authenticate → validate role → call agent or Supabase → return JSON.
+
+2. **React components contain no database or agent logic**  
+   They only render props and call API routes or Supabase client helpers.
+
+3. **Agent code never imports from**  
+   - `@/components/*`  
+   - `@/app/actions/*`  
+   - any frontend-specific module  
+
+4. **All execution paths** (scheduled + manual) must pass deterministic guardrail validation before a payload is sent to KeeperHub.
+
+5. **Hard limits** configured by Admin cannot be overridden by Gemini or by Operators.
+
+6. **Audit records are append-only**. Application keys (including service role used by the agent) have INSERT-only permission on the audit table.
+
+---
+
+## 3. Folder Structure (Monorepo)
+
+```text
+/defi-sentinel
+├── apps
+│   ├── web                          # Next.js 15
+│   │   ├── app
+│   │   │   ├── (auth)/login/page.tsx
+│   │   │   ├── (protected)
+│   │   │   │   ├── dashboard/page.tsx
+│   │   │   │   ├── audit/page.tsx
+│   │   │   │   ├── actions/page.tsx
+│   │   │   │   ├── admin/page.tsx
+│   │   │   │   └── team/page.tsx
+│   │   │   ├── api
+│   │   │   │   ├── agent/
+│   │   │   │   │   ├── chat/route.ts          # NL commands
+│   │   │   │   │   ├── force-rebalance/route.ts
+│   │   │   │   │   └── status/route.ts
+│   │   │   │   ├── admin/
+│   │   │   │   │   ├── limits/route.ts
+│   │   │   │   │   └── members/route.ts
+│   │   │   │   └── audit/route.ts
+│   │   │   └── layout.tsx
+│   │   ├── components/              # pure UI only
+│   │   ├── lib
+│   │   │   ├── supabase/
+│   │   │   │   ├── client.ts
+│   │   │   │   ├── server.ts
+│   │   │   │   └── middleware.ts
+│   │   │   └── utils.ts
+│   │   └── package.json
+│   │
+│   └── agent                        # Standalone Node/TS daemon
+│       ├── src
+│       │   ├── index.ts             # entry – starts poller
+│       │   ├── brain/
+│       │   │   └── gemini.ts
+│       │   ├── formula/
+│       │   │   └── health-factor.ts
+│       │   ├── guardrails/
+│       │   │   ├── role-validator.ts
+│       │   │   ├── hard-limits.ts
+│       │   │   └── circuit-breaker.ts
+│       │   ├── keeperhub/
+│       │   │   └── client.ts
+│       │   ├── poller/
+│       │   │   └── scheduler.ts
+│       │   ├── audit/
+│       │   │   └── writer.ts
+│       │   └── types.ts
+│       ├── package.json
+│       └── tsconfig.json
+│
+├── packages
+│   └── shared                       # shared types & constants
+│       ├── src
+│       │   ├── roles.ts
+│       │   ├── audit-schema.ts
+│       │   └── aave.ts
+│       └── package.json
+│
+├── supabase
+│   ├── migrations/
+│   │   ├── 001_initial_schema.sql
+│   │   ├── 002_rls_policies.sql
+│   │   └── 003_audit_append_only.sql
+│   └── config.toml
+│
+├── keeperhub                        # workflow JSON schemas / docs
+│   └── workflows/
+│       └── aave-rebalance.json
+│
+└── README.md
+```
+
+---
+
+## 4. Database Schema (Supabase / PostgreSQL)
+
+```sql
+-- 001_initial_schema.sql
+
+create type user_role as enum ('admin', 'operator', 'viewer');
+
+create table organizations (
+  id uuid primary key default gen_random_uuid(),
+  keeperhub_org_id text unique not null,
+  name text not null,
+  created_at timestamptz default now()
+);
+
+create table profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  wallet_address text unique not null,
+  display_name text,
+  created_at timestamptz default now()
+);
+
+create table organization_members (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references organizations(id) on delete cascade,
+  wallet_address text not null,
+  role user_role not null default 'viewer',
+  created_at timestamptz default now(),
+  unique (organization_id, wallet_address)
+);
+
+create table hard_limits (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references organizations(id) on delete cascade unique,
+  max_repayment_pct numeric not null default 30,          -- % of debt
+  max_gas_price_gwei numeric not null default 50,
+  max_consecutive_failures int not null default 3,
+  allowed_contracts text[] not null default '{}',
+  updated_at timestamptz default now(),
+  updated_by text
+);
+
+create table circuit_breaker (
+  organization_id uuid primary key references organizations(id) on delete cascade,
+  is_tripped boolean not null default false,
+  failure_count int not null default 0,
+  last_failure_at timestamptz,
+  last_failure_reason text,
+  tripped_at timestamptz
+);
+
+create table audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  execution_id text not null,
+  organization_id uuid references organizations(id),
+  timestamp timestamptz not null default now(),
+  trigger_type text not null,                    -- SCHEDULED_CRON | MANUAL_OPERATOR
+  actor_wallet text,                             -- null for scheduled
+  position_state jsonb not null,
+  intelligence_gate jsonb,
+  llm_reasoning jsonb,
+  guardrail_validation jsonb not null,
+  execution_details jsonb,
+  created_at timestamptz default now()
+);
+
+-- Indexes
+create index idx_audit_org_time on audit_logs (organization_id, timestamp desc);
+create index idx_members_wallet on organization_members (wallet_address);
+```
+
+### RLS Policies (simplified)
+
+```sql
+-- organization_members
+create policy "Users can read own membership"
+  on organization_members for select
+  using (wallet_address = (select wallet_address from profiles where id = auth.uid()));
+
+create policy "Admins can manage members"
+  on organization_members for all
+  using (
+    exists (
+      select 1 from organization_members m
+      where m.organization_id = organization_members.organization_id
+        and m.wallet_address = (select wallet_address from profiles where id = auth.uid())
+        and m.role = 'admin'
+    )
+  );
+
+-- audit_logs (append-only)
+create policy "Operators & Admins can read audit"
+  on audit_logs for select
+  using (
+    exists (
+      select 1 from organization_members m
+      where m.organization_id = audit_logs.organization_id
+        and m.wallet_address = (select wallet_address from profiles where id = auth.uid())
+        and m.role in ('operator', 'admin')
+    )
+  );
+
+create policy "Service role can insert audit"
+  on audit_logs for insert
+  with check (true);   -- agent uses service role; no update/delete policies exist
+```
+
+**Critical**: There are **no UPDATE or DELETE policies** on `audit_logs`. Even the service role used by the agent is restricted to INSERT only (enforced via Supabase dashboard or additional grants).
+
+---
+
+## 5. Role Validation – Complete Technical Flow
+
+Role validation happens in **two independent places**. The agent never trusts the frontend.
+
+### 5.1 Frontend / API Route Layer (Next.js)
+
+```ts
+// apps/web/lib/supabase/server.ts + middleware pattern
+
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function getSessionAndRole() {
+  const supabase = createServerClient(...)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('wallet_address')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile) return null
+
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role, organization_id')
+    .eq('wallet_address', profile.wallet_address)
+    .single()
+
+  return {
+    wallet: profile.wallet_address,
+    role: membership?.role ?? null,
+    organizationId: membership?.organization_id ?? null
+  }
+}
+```
+
+Every protected API route starts with:
+
+```ts
+const session = await getSessionAndRole()
+if (!session || !['operator', 'admin'].includes(session.role)) {
+  return NextResponse.json({ error: 'ROLE_INSUFFICIENT' }, { status: 403 })
+}
+```
+
+### 5.2 Agent Layer (Authoritative)
+
+The agent re-validates on every request that can lead to execution.
+
+```ts
+// apps/agent/src/guardrails/role-validator.ts
+
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!   // only for agent
+)
+
+export type Role = 'admin' | 'operator' | 'viewer'
+
+export async function validateRole(
+  walletAddress: string,
+  requiredRoles: Role[]
+): Promise<{ allowed: boolean; role: Role | null; organizationId: string | null; reason?: string }> {
+  const { data, error } = await supabase
+    .from('organization_members')
+    .select('role, organization_id')
+    .eq('wallet_address', walletAddress.toLowerCase())
+    .maybeSingle()
+
+  if (error || !data) {
+    return { allowed: false, role: null, organizationId: null, reason: 'WALLET_NOT_FOUND' }
+  }
+
+  if (!requiredRoles.includes(data.role)) {
+    return {
+      allowed: false,
+      role: data.role,
+      organizationId: data.organization_id,
+      reason: 'ROLE_INSUFFICIENT'
+    }
+  }
+
+  return {
+    allowed: true,
+    role: data.role,
+    organizationId: data.organization_id
+  }
+}
+```
+
+**Usage inside agent execution path:**
+
+```ts
+const roleCheck = await validateRole(actorWallet, ['operator', 'admin'])
+if (!roleCheck.allowed) {
+  await writeAuditLog({ ... , guardrail_validation: { status: 'REJECTED', reason: roleCheck.reason } })
+  throw new Error(`ROLE_INSUFFICIENT: ${roleCheck.reason}`)
+}
+```
+
+### 5.3 Permission Matrix (enforced by agent)
+
+| Action                              | viewer | operator | admin |
+|-------------------------------------|--------|----------|-------|
+| Read vault status                   | ✅     | ✅       | ✅    |
+| Read full audit trail               | ❌     | ✅       | ✅    |
+| Natural-language command            | ❌     | ✅       | ✅    |
+| Force Soft Rebalance / Safe-Exit    | ❌     | ✅       | ✅    |
+| Change hard limits / workflows      | ❌     | ❌       | ✅    |
+| Revoke / add Operators              | ❌     | ❌       | ✅    |
+| Reset circuit breaker               | ❌     | ❌       | ✅    |
+
+### 5.4 Real-time Revocation
+
+- Admin updates `organization_members.role` or deletes the row in Supabase.
+- Next request from that wallet fails `validateRole` immediately.
+- In-flight KeeperHub transactions are **not** cancelled (by design).
+
+### 5.5 KeeperHub Organization API Key
+
+Operators are the selected members of the KeeperHub organization that owns the API key. The agent may optionally cross-check membership via KeeperHub’s API if the integration is available, but Supabase remains the source of truth for the application’s role decisions.
+
+---
+
+## 6. Core Agent Logic
+
+### 6.1 Health-Factor Formula Engine (pure, no Gemini)
+
+```ts
+// apps/agent/src/formula/health-factor.ts
+
+export type Action =
+  | { type: 'NONE' }
+  | { type: 'SOFT_REBALANCE'; repayPct: 20 }
+  | { type: 'SAFE_EXIT' }
+
+export function decideAction(healthFactor: number): Action {
+  if (healthFactor > 1.30) return { type: 'NONE' }
+  if (healthFactor <= 1.10) return { type: 'SAFE_EXIT' }
+  return { type: 'SOFT_REBALANCE', repayPct: 20 }   // 1.10 < HF ≤ 1.30
+}
+```
+
+Amounts are calculated from `AavePool.getUserAccountData()`:
+
+- `totalDebtBase`
+- `availableBorrowsBase`
+- etc.
+
+Soft rebalance always targets **~20 % of current debt**.
+
+### 6.2 Guardrails (deterministic middleware)
+
+Before any payload reaches KeeperHub the agent runs:
+
+1. Role validation (above)
+2. Circuit-breaker check
+3. Hard-limits check (max repayment %, max gas price, allowed contracts)
+4. Aave close-factor awareness (50 % max on large positions)
+5. Schema validation of the final payload
+
+Any failure → structured rejection + audit log entry. Gemini suggestions are never silently accepted.
+
+### 6.3 Circuit Breaker
+
+```ts
+MAX_CONSECUTIVE_FAILURES = 3
+
+// On every execution attempt
+if (circuit.is_tripped) → abort + alert
+try {
+  result = await executeViaKeeperHub(...)
+  reset failure_count
+} catch {
+  failure_count++
+  if (failure_count >= 3) trip circuit + Discord alert
+}
+```
+
+### 6.4 Gemini Responsibilities (strictly limited)
+
+- Estimate `maxPriorityFeePerGas` + 10–20 % buffer
+- Interpret Operator natural-language instructions
+- Produce short human-readable `thought_summary` for the audit log
+
+Gemini **never** decides the repay amount or overrides hard limits.
+
+### 6.5 KeeperHub Execution
+
+- Agent builds a workflow payload
+- Sends via MCP / HTTP client
+- KeeperHub:
+  - Runs `eth_estimateGas`
+  - Signs with Turnkey MPC under the workflow policy
+  - Handles automatic replacement transactions (10–15 % fee bump after 30–60 s)
+  - Respects the hard gas cap configured in the workflow
+- Returns tx hash + status to agent → written to audit log
+
+### 6.6 Polling Schedule
+
+- Fixed interval: **6 hours**
+- Implemented with a simple `setInterval` or node-cron inside the agent daemon
+- No event-driven webhooks in the current testnet design
+
+---
+
+## 7. Audit Log Schema (exact payload)
+
+Every cycle writes one row with this structure (see System Overview for full example):
+
+```ts
+{
+  execution_id: string
+  timestamp: ISO string
+  trigger_type: 'SCHEDULED_CRON' | 'MANUAL_OPERATOR'
+  organization_id: uuid
+  actor_wallet?: string
+  position_state: {
+    protocol: 'AaveV3'
+    network: 'Base Sepolia' | 'Ethereum Sepolia'
+    target_wallet: string
+    health_factor: number
+    collateral_usd: number
+    debt_usd: number
+  }
+  llm_reasoning?: {
+    model: 'gemini-2.5-flash'
+    thought_summary: string
+    proposed_tool_call: string
+  }
+  guardrail_validation: {
+    status: 'PASSED' | 'REJECTED'
+    rules_checked: string[]
+    violations: string[]
+  }
+  execution_details?: {
+    keeperhub_workflow_id: string
+    tx_hash?: string
+    simulation_status: string
+    gas_used?: string
+    effective_gas_price_gwei?: string
+    execution_status: 'CONFIRMED' | 'REVERTED' | 'GAS_EXCEEDED' | 'CIRCUIT_BREAKER_HALT' | ...
+    retry_attempts: number
+  }
+}
+```
+
+Retention: 2 weeks (can be enforced with a scheduled Supabase function or external job).
+
+---
+
+## 8. Environment Variables (Agent)
+
+```env
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=          # INSERT-only on audit_logs
+GEMINI_API_KEY=
+KEEPERHUB_API_KEY=                  # organization key
+KEEPERHUB_WORKFLOW_ID=
+AAVE_POOL_ADDRESS_BASE_SEPOLIA=
+AAVE_POOL_ADDRESS_ETH_SEPOLIA=
+RPC_URL_BASE_SEPOLIA=
+RPC_URL_ETH_SEPOLIA=
+DISCORD_WEBHOOK_URL=                # emergency alerts
+HARD_GAS_CAP_GWEI=50
+```
+
+---
+
+## 9. Security Invariants (must never be broken)
+
+1. Private keys never exist in the agent or Next.js process.
+2. All state-changing actions pass role validation **inside the agent**.
+3. Hard limits are enforced in agent middleware **and** inside the KeeperHub workflow.
+4. Audit table is append-only.
+5. Circuit breaker can only be reset by an Admin.
+6. Gemini output is treated as untrusted input and is always validated.
+
+---
+
+**Document Status**  
+Architecture for the functional testnet phase. 
+```
+

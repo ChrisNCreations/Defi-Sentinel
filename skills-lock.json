@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "ai-sdk": {
+      "source": "vercel/ai",
+      "sourceType": "github",
+      "skillPath": "skills/use-ai-sdk/SKILL.md",
+      "computedHash": "dfce60b0f2749991e000123526e298d5ede1c8353d837e71886fb3c8e5f8b730"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
+    },
+    "keeperhub-wallet": {
+      "source": "keeperhub/agentic-wallet-skills",
+      "sourceType": "github",
+      "skillPath": "skills/keeperhub-wallet/SKILL.md",
+      "computedHash": "39a52d1c81895486ff1387402aeeb1291586f2c51a2982d9a7b3c794f64ddda5"
+    },
+    "next-dev-loop": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "skillPath": "skills/next-dev-loop/SKILL.md",
+      "computedHash": "1fb1b47ed7186737df086aa198f86961f72691539f1c4507f60bbedf60a128be"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "6cb585d36a0d0418986bc8449bc0c8ff216344d692e08245d7f9e7414fee11a6"
+    }
+  }
+}

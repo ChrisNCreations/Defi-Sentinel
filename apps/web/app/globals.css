@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  DeFi Sentinel design tokens
+  Theme: Light — Sunlit cream paper, cobalt pulse
+  Source: docs/design.md + /public UI mockups
+*/
+:root {
+  --color-canvas-cream: #faf9f7;
+  --color-surface-ivory: #fbfaf7;
+  --color-pure-white: #ffffff;
+  --color-lavender-mist: #f4f0ff;
+  --color-powder-blue: #d6e4f1;
+  --color-ink-charcoal: #121722;
+  --color-slate-gray: #777c86;
+  --color-steel-gray: #a5a5a5;
+  --color-hairline: #efefef;
+  --color-electric-cobalt: #0068f9;
+  --color-deep-cobalt: #024bb1;
+  --color-vivid-violet: #6736eb;
+  --color-forest: #046645;
+  --color-danger: #b42318;
+
+  --radius-cards: 16px;
+  --radius-buttons: 48px;
+  --radius-navitems: 48px;
+  --radius-badges: 8px;
+
+  --shadow-subtle:
+    rgba(0, 0, 0, 0.07) 0px 1px 1px 0px,
+    rgba(0, 0, 0, 0.04) 0px -1px 1px 0px inset,
+    rgba(0, 0, 0, 0.14) 0px 0px 0px 0.5px inset;
+  --shadow-soft: rgba(0, 0, 0, 0.04) 0px 20px 20px -8px;
+
+  /* shadcn-compatible aliases mapped to product tokens */
+  --background: var(--color-canvas-cream);
+  --foreground: var(--color-ink-charcoal);
+  --card: var(--color-pure-white);
+  --card-foreground: var(--color-ink-charcoal);
+  --primary: var(--color-electric-cobalt);
+  --primary-foreground: var(--color-pure-white);
+  --secondary: var(--color-pure-white);
+  --secondary-foreground: var(--color-ink-charcoal);
+  --muted: var(--color-surface-ivory);
+  --muted-foreground: var(--color-slate-gray);
+  --accent: var(--color-lavender-mist);
+  --accent-foreground: var(--color-ink-charcoal);
+  --destructive: var(--color-danger);
+  --border: var(--color-hairline);
+  --input: var(--color-hairline);
+  --ring: var(--color-electric-cobalt);
+  --radius: 16px;
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply min-h-screen bg-canvas font-sans text-ink;
+    background-color: var(--color-canvas-cream);
+    color: var(--color-ink-charcoal);
+  }
+}
