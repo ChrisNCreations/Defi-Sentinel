@@ -75,6 +75,16 @@
 - [x] CLI: `agent-doctor`, `list-workflows`, `--transport rest|mcp`, optional `kh` wrapper
 - [x] Docs: `docs/keeperhub-integration.md` + library/dev/architecture updates
 
-## Phase 6+
+## Phase 6 – Scheduled Poller
+
+- [x] `poller/scheduler.ts` (setInterval, single-flight, next-run logging)
+- [x] `poller/tick.ts` + shared `cycle/run-cycle.ts`
+- [x] Default daemon mode runs poller (not idle)
+- [x] CLI: `once-cycle`, `poll`; env `TARGET_WALLET`, `ORGANIZATION_ID`, interval overrides
+- [x] Audit NONE on every cycle when writeAudit enabled
+- [x] Soft RPC failures do not kill the process
+- [x] Unit tests for scheduler + cycle
+
+## Phase 7+
 
 See `docs/Build phase.md`.

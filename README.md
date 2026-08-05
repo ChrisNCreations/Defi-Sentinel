@@ -35,11 +35,14 @@ pnpm dev
 # or
 pnpm --filter web dev
 
-# Agent daemon (idle until Ctrl+C)
+# Agent daemon (Phase 6 poller — set TARGET_WALLET + ORGANIZATION_ID in apps/agent/.env)
 pnpm --filter agent dev
 
 # Formula self-check (no wallet / no RPC)
 pnpm --filter agent once
+
+# One scheduled cycle (dry-run KeeperHub)
+pnpm --filter agent once-cycle -- --wallet 0x… --org <uuid> --mock-hf 1.5 --dry-run-keeper
 
 # Decide action for a testnet wallet (reads Aave V3 on-chain)
 pnpm --filter agent decide -- --wallet 0xYourAddress --network base-sepolia
@@ -57,7 +60,8 @@ Admin / Operator are never auto-assigned; only seed or explicit membership grant
 | Command | Description |
 |---------|-------------|
 | `pnpm dev` | Start web app |
-| `pnpm dev:agent` | Start agent process |
+| `pnpm dev:agent` | Start agent poller (Phase 6) |
+| `pnpm --filter agent once-cycle -- --wallet 0x… --org <id>` | Single scheduled cycle then exit |
 | `pnpm --filter agent decide -- --wallet 0x…` | Read Aave position + print formula decision |
 | `pnpm --filter agent force-soft -- --actor 0x…` | Guardrails + KeeperHub execute (Turnkey remote) |
 | `pnpm --filter agent force-soft -- --actor 0x… --dry-run-keeper` | Guardrails + payload only (no KH call) |

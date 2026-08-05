@@ -138,14 +138,17 @@ A coding assistant should complete one phase fully (including basic tests) befor
 **Goal:** Fully autonomous 6-hour loop.
 
 ### Tasks
-- [ ] `poller/scheduler.ts` (node-cron or setInterval)
-- [ ] On each tick:
+- [x] `poller/scheduler.ts` (setInterval + single-flight ticks)
+- [x] Shared `cycle/run-cycle.ts` (formula → Gemini → guardrails → KeeperHub)
+- [x] On each tick:
   1. Read position
   2. Run formula
   3. If action needed → full guardrail + Gemini + KeeperHub path
   4. Always write audit record (even for NONE)
-- [ ] Graceful handling of RPC failures
-- [ ] Logging of next run time
+- [x] Graceful handling of RPC failures (soft failure; daemon continues)
+- [x] Logging of next run time
+- [x] Default `dev`/`start` runs poller (`--once-cycle` for single tick; `--idle` to park)
+- [x] Env: `TARGET_WALLET`, `ORGANIZATION_ID`, `POLL_INTERVAL_MS` / `POLL_INTERVAL_HOURS`
 
 ### Exit Criteria
 - Agent runs unattended for 24 h+ and correctly acts (or does nothing) every 6 hours

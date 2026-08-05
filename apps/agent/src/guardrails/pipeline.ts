@@ -162,9 +162,10 @@ export async function runGuardrails(
   let auditExecutionId: string | undefined
 
   // Always audit rejections unless writeAudit === false.
-  // Passes only when auditPasses !== false (set false when KeeperHub path will write the final row).
+  // Passes (including NONE) when auditPasses !== false — Phase 6 requires NONE rows on every cycle.
+  // Set auditPasses false when KeeperHub path will write the final SOFT/SAFE row.
   const shouldAudit =
-    ctx.writeAudit !== false && (!allowed || (ctx.auditPasses !== false && ctx.action.type !== 'NONE'))
+    ctx.writeAudit !== false && (!allowed || ctx.auditPasses !== false)
 
   // Audit rejections (and optional passes when writeAudit true)
   if (shouldAudit) {

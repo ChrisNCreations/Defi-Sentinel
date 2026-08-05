@@ -1,5 +1,6 @@
 import {
   DEFAULT_AAVE_POOL,
+  POLL_INTERVAL_HOURS,
   type NetworkId,
 } from '@defi-sentinel/shared'
 import type { Address } from 'viem'
@@ -16,6 +17,8 @@ export interface NetworkConfig {
 
 export type AgentMode =
   | 'idle'
+  | 'poll'
+  | 'once-cycle'
   | 'once'
   | 'decide'
   | 'force-soft'
@@ -74,7 +77,7 @@ function flagValue(argv: string[], name: string): string | undefined {
   return undefined
 }
 
-/** Parse CLI flags for decide / force / guard / chat modes */
+/** Parse CLI flags for decide / force / guard / chat / poll modes */
 export function parseCliArgs(argv: string[]): {
   mode: AgentMode
   once: boolean
@@ -94,8 +97,19 @@ export function parseCliArgs(argv: string[]): {
   transport: KeeperHubTransport
   /** Extra args after `kh` subcommand */
   khArgs: string[]
+  /** Skip immediate first tick when starting poller */
+  pollDeferFirst: boolean
 } {
   const once = argv.includes('--once')
+  const onceCycle =
+    argv.includes('--once-cycle') ||
+    argv.includes('once-cycle') ||
+    argv.includes('--poll-once')
+  const poll =
+    argv.includes('--poll') ||
+    argv.includes('poll') ||
+    argv.includes('--daemon')
+  const idle = argv.includes('--idle')
   const decide = argv.includes('--decide') || argv.includes('decide')
   const forceSoft = argv.includes('--force-soft') || argv.includes('force-soft')
   const forceSafe = argv.includes('--force-safe') || argv.includes('force-safe')
@@ -108,7 +122,8 @@ export function parseCliArgs(argv: string[]): {
     argv.includes('workflows')
   const khIdx = argv.findIndex((a) => a === 'kh' || a === '--kh')
 
-  let mode: AgentMode = 'idle'
+  // Default long-running mode is poll (Phase 6). Use --idle to park without scheduler.
+  let mode: AgentMode = 'poll'
   if (doctor) mode = 'doctor'
   else if (listWorkflows) mode = 'list-workflows'
   else if (khIdx >= 0) mode = 'kh'
@@ -116,8 +131,13 @@ export function parseCliArgs(argv: string[]): {
   else if (forceSoft) mode = 'force-soft'
   else if (forceSafe) mode = 'force-safe'
   else if (guard) mode = 'guard'
-  else if (decide || flagValue(argv, '--wallet') || flagValue(argv, '--mock-hf')) mode = 'decide'
+  else if (onceCycle) mode = 'once-cycle'
+  // Explicit decide only — --wallet/--mock-hf alone may be poller flags (Phase 6)
+  else if (decide) mode = 'decide'
   else if (once) mode = 'once'
+  else if (idle) mode = 'idle'
+  else if (poll) mode = 'poll'
+  // default remains 'poll'
 
   const transport = parseTransport(
     flagValue(argv, '--transport') ?? process.env.KEEPERHUB_TRANSPORT,
@@ -128,6 +148,7 @@ export function parseCliArgs(argv: string[]): {
   const wallet =
     flagValue(argv, '--wallet') ??
     flagValue(argv, '-w') ??
+    readEnv('TARGET_WALLET') ??
     (() => {
       const keys = [
         'decide',
@@ -156,7 +177,10 @@ export function parseCliArgs(argv: string[]): {
   const networkRaw = flagValue(argv, '--network') ?? flagValue(argv, '-n')
   const mockHfRaw = flagValue(argv, '--mock-hf')
   const gasRaw = flagValue(argv, '--gas-gwei')
-  const orgId = flagValue(argv, '--org')
+  const orgId =
+    flagValue(argv, '--org') ??
+    readEnv('ORGANIZATION_ID') ??
+    readEnv('AGENT_ORG_ID')
   const message =
     flagValue(argv, '--message') ??
     flagValue(argv, '-m') ??
@@ -177,12 +201,24 @@ export function parseCliArgs(argv: string[]): {
     (mode === 'force-soft' ||
       mode === 'force-safe' ||
       mode === 'chat' ||
+      mode === 'poll' ||
+      mode === 'once-cycle' ||
       argv.includes('--execute'))
 
-  // Brain runs for chat always; for force-* unless --no-brain
+  // Brain: chat/force/guard always (unless --no-brain); poller uses brain unless POLLER_USE_BRAIN=0
+  const pollerBrainEnv = readEnv('POLLER_USE_BRAIN')
+  const pollerUseBrain =
+    pollerBrainEnv === undefined ||
+    pollerBrainEnv === '1' ||
+    pollerBrainEnv.toLowerCase() === 'true'
+
   const useBrain =
     !argv.includes('--no-brain') &&
-    (mode === 'chat' || mode === 'force-soft' || mode === 'force-safe' || mode === 'guard')
+    (mode === 'chat' ||
+      mode === 'force-soft' ||
+      mode === 'force-safe' ||
+      mode === 'guard' ||
+      ((mode === 'poll' || mode === 'once-cycle') && pollerUseBrain))
 
   return {
     mode,
@@ -202,7 +238,43 @@ export function parseCliArgs(argv: string[]): {
     useBrain,
     transport,
     khArgs,
+    pollDeferFirst: argv.includes('--defer-first') || argv.includes('--no-immediate'),
   }
+}
+
+/** Poller env + defaults (Phase 6) */
+export function getPollerConfig(): {
+  targetWallet?: string
+  organizationId?: string
+  pollIntervalMs: number
+  useBrain: boolean
+} {
+  const pollerBrainEnv = readEnv('POLLER_USE_BRAIN')
+  const useBrain =
+    pollerBrainEnv === undefined ||
+    pollerBrainEnv === '1' ||
+    pollerBrainEnv.toLowerCase() === 'true'
+
+  return {
+    targetWallet: readEnv('TARGET_WALLET'),
+    organizationId: readEnv('ORGANIZATION_ID') ?? readEnv('AGENT_ORG_ID'),
+    pollIntervalMs: resolvePollIntervalFromEnv(),
+    useBrain,
+  }
+}
+
+function resolvePollIntervalFromEnv(): number {
+  const msRaw = readEnv('POLL_INTERVAL_MS')
+  if (msRaw) {
+    const n = Number(msRaw)
+    if (Number.isFinite(n) && n > 0) return Math.floor(n)
+  }
+  const hoursRaw = readEnv('POLL_INTERVAL_HOURS')
+  if (hoursRaw) {
+    const h = Number(hoursRaw)
+    if (Number.isFinite(h) && h > 0) return Math.floor(h * 3_600_000)
+  }
+  return Math.floor(POLL_INTERVAL_HOURS * 3_600_000)
 }
 
 export function hardGasCapGwei(): number {

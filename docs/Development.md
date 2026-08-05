@@ -87,6 +87,13 @@ AAVE_POOL_ADDRESS_ETH_SEPOLIA=0x...
 RPC_URL_BASE_SEPOLIA=https://sepolia.base.org
 RPC_URL_ETH_SEPOLIA=https://rpc.sepolia.org
 
+# Phase 6 poller
+TARGET_WALLET=0xYourTurnkeyManagedWallet
+ORGANIZATION_ID=your-supabase-org-uuid
+# POLL_INTERVAL_HOURS=6
+# POLL_INTERVAL_MS=30000
+# POLLER_USE_BRAIN=1
+
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 HARD_GAS_CAP_GWEI=50
 ```
