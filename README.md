@@ -70,13 +70,9 @@ pnpm --filter agent seed-roles   # print seeded Admin / Operator / Viewer addres
 pnpm dev                         # open /login → connect seed wallet → SIWE
 ```
 
-| Role | Seed wallet (Anvil) |
-|------|---------------------|
-| Admin | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` |
-| Operator | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
-| Viewer | `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC` |
 
-Viewers can open `/dashboard` but are denied `/audit` (middleware + RLS).
+Viewers can open `/dashboard` but are denied `/audit` and `/actions` (middleware + RLS).  
+Admin / Operator are never auto-assigned; only seed or explicit membership grants those roles.
 
 ## Scripts
 
@@ -87,6 +83,11 @@ Viewers can open `/dashboard` but are denied `/audit` (middleware + RLS).
 | `pnpm --filter agent decide -- --wallet 0x…` | Read Aave position + print formula decision |
 | `pnpm --filter agent force-soft -- --actor 0x…` | Guardrails + KeeperHub execute (Turnkey remote) |
 | `pnpm --filter agent force-soft -- --actor 0x… --dry-run-keeper` | Guardrails + payload only (no KH call) |
+| `pnpm --filter agent chat -- --actor 0x… --message "repay 20% if needed" --mock-hf 1.15` | NL via Gemini → formula/guardrails/KeeperHub |
+| `pnpm --filter agent force-soft -- … --transport mcp` | Same path, KeeperHub via MCP (optional) |
+| `pnpm --filter agent agent-doctor` | Env + REST (+ MCP if enabled) health check |
+| `pnpm --filter agent list-workflows` | List **org** workflows (no marketplace) |
+| `pnpm --filter agent kh -- workflow list` | Optional system `kh` CLI wrapper |
 | `pnpm --filter agent guard -- --actor 0x… --mock-hf 1.15` | Formula + guardrails (dry-run audit without DB keys) |
 | `pnpm --filter agent test` | Agent unit tests (formula + guardrails) |
 | `pnpm build` | Build all packages that define `build` |
@@ -128,12 +129,4 @@ Vercel project settings when ready:
 - [Design system](./docs/design.md)
 - [UI layouts](./docs/ui%20layout.md)
 
-## Current phase
 
-**Phase 0 — complete** (monorepo, shadcn/ui, design tokens).  
-**Phase 1 — complete** (schema, RLS, SIWE, protected routes, seed roles).  
-**Phase 2 — complete** (Aave reader + deterministic HF formula + decide CLI).  
-**Phase 3 — complete** (guardrails pipeline, circuit breaker, audit writer skeleton).  
-**Phase 4 — complete** (KeeperHub REST execute + poll + audit; Turnkey never in-process).
-
-**Next: Phase 5** — Gemini brain (gas estimate + NL intent).

@@ -59,11 +59,6 @@ export function LoginCard() {
       }
 
       if (!verifyRes.ok) {
-        if (payload.error === 'ACCESS_DENIED') {
-          throw new Error(
-            payload.message ?? 'Access denied — wallet is not in the organization.',
-          )
-        }
         throw new Error(payload.message ?? payload.error ?? 'Sign-in failed')
       }
 
@@ -102,7 +97,8 @@ export function LoginCard() {
         <CardContent className="p-8">
           <p className="text-center text-base text-ink">Connect your wallet to continue</p>
           <p className="mt-2 text-center text-sm text-slate">
-            Sign-In with Ethereum issues a session JWT and loads your role.
+            Anyone can connect for a read-only dashboard. Admins and Operators keep their
+            privileged roles.
           </p>
 
           <div className="mt-8 flex flex-col items-center gap-3">
@@ -130,7 +126,7 @@ export function LoginCard() {
             <p className="mt-6 rounded-badge bg-danger/10 px-3 py-2 text-center text-sm text-danger">
               {error ??
                 (urlError === 'access_denied'
-                  ? 'Access denied — wallet is not an organization member.'
+                  ? 'Could not complete sign-in. Try connecting again.'
                   : urlError === 'no_profile'
                     ? 'Profile missing — please sign in again.'
                     : 'Authentication error.')}
@@ -138,7 +134,7 @@ export function LoginCard() {
           )}
 
           <p className="mt-6 text-center text-xs text-steel">
-            Seeded test wallets: Admin (Anvil #0), Operator (#1), Viewer (#2).
+            Public wallets join as Viewer. Admin / Operator are assigned separately.
           </p>
         </CardContent>
       </Card>

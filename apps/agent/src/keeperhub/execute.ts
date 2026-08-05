@@ -14,9 +14,10 @@ import {
   recordExecutionSuccess,
   type CircuitStore,
 } from '../guardrails/circuit-breaker'
-import { createKeeperHubClient, KeeperHubClient, KeeperHubError } from './client'
+import { KeeperHubClient, KeeperHubError } from './client'
+import { createKeeperHubExecutor } from './executor'
 import { mapActionToWorkflowInput, validateWorkflowInput } from './payload'
-import type { KeeperHubRunResult, KeeperHubWorkflowInput } from './types'
+import type { KeeperHubExecutor, KeeperHubRunResult, KeeperHubTransport, KeeperHubWorkflowInput } from './types'
 
 const CHAIN_IDS: Record<NetworkId, number> = {
   'base-sepolia': 84532,
@@ -33,11 +34,19 @@ export interface ExecutePathParams {
   effectiveRepayPct: number
   gasPriceGwei: number
   rulesChecked: string[]
+  /** Phase 5 — Gemini summary for audit (never trusted for amounts) */
+  llmReasoning?: {
+    model: string
+    thought_summary: string
+    proposed_tool_call: string
+  }
   /** Skip live KeeperHub (still builds payload + audit) */
   dryRun?: boolean
   /** Force audit dry-run even when executing live (tests) */
   dryRunAudit?: boolean
-  client?: KeeperHubClient
+  /** Override executor (REST or MCP); defaults to createKeeperHubExecutor() */
+  client?: KeeperHubExecutor
+  transport?: KeeperHubTransport
   circuitStore?: CircuitStore
 }
 
@@ -74,6 +83,7 @@ export async function executeViaKeeperHub(
       rulesChecked: [...params.rulesChecked, 'HARD_GAS_CAP'],
       violations,
       executionStatus: 'GAS_EXCEEDED',
+      llmReasoning: params.llmReasoning,
       dryRun: params.dryRunAudit ?? params.dryRun,
     })
     return {
@@ -109,6 +119,7 @@ export async function executeViaKeeperHub(
       rulesChecked: [...params.rulesChecked, 'PAYLOAD_SCHEMA'],
       violations,
       executionStatus: 'REJECTED',
+      llmReasoning: params.llmReasoning,
       dryRun: params.dryRunAudit ?? params.dryRun,
     })
     return {
@@ -131,7 +142,15 @@ export async function executeViaKeeperHub(
       rulesChecked: [...params.rulesChecked, 'KEEPERHUB_DRY_RUN'],
       violations: [],
       executionStatus: 'PENDING',
-      dryRun: true,
+      llmReasoning: params.llmReasoning,
+      // Keep audit real unless explicitly dry-run-audit (payload-only still useful for UI)
+      dryRun: params.dryRunAudit === true,
+      executionDetails: {
+        keeperhub_workflow_id: process.env.KEEPERHUB_WORKFLOW_ID ?? 'dry-run',
+        simulation_status: 'SKIPPED',
+        execution_status: 'PENDING',
+        retry_attempts: 0,
+      },
     })
     return {
       allowed: true,
@@ -149,14 +168,18 @@ export async function executeViaKeeperHub(
     }
   }
 
-  const client = params.client ?? createKeeperHubClient()
+  const client =
+    params.client ??
+    createKeeperHubExecutor({
+      transport: params.transport,
+    })
   if (!client.configured) {
     throw new KeeperHubError('KeeperHub not configured', 'NOT_CONFIGURED')
   }
 
   let run: KeeperHubRunResult
   try {
-    console.log('[keeperhub] executing workflow', client.workflowId)
+    console.log(`[keeperhub] transport=${client.transport} workflow=${client.workflowId}`)
     console.log('[keeperhub] signing=turnkey_via_keeperhub (agent holds no keys)')
     run = await client.executeAndWait(workflowInput, { maxRetries: 1 })
   } catch (err) {
@@ -264,6 +287,7 @@ async function writeExecutionAudit(
     rulesChecked: details.rulesChecked,
     violations: details.violations,
     executionStatus: details.executionStatus,
+    llmReasoning: params.llmReasoning,
     dryRun: details.dryRun,
     executionDetails: {
       keeperhub_workflow_id: details.workflowId,

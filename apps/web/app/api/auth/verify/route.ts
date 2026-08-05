@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import { SiweMessage } from 'siwe'
 import {
+  DEFAULT_ORGANIZATION_ID,
+  isPrivilegedRole,
+  isRole,
+  type Role,
+} from '@defi-sentinel/shared'
+import {
   normalizeWallet,
   verifySiweMessage,
   walletAuthEmail,
@@ -8,8 +14,62 @@ import {
 } from '@/lib/auth/siwe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient, roleHomePath } from '@/lib/supabase/server'
-import type { Role } from '@defi-sentinel/shared'
 import { consumeNonce } from '@/lib/auth/nonce-store'
+
+/**
+ * Resolve org membership for a wallet after SIWE.
+ * - admin / operator: must already be in organization_members (seed or admin-managed)
+ * - everyone else: public viewer — auto-enrolled on the default org
+ */
+async function resolveMembership(
+  admin: ReturnType<typeof createAdminClient>,
+  address: string,
+): Promise<{ role: Role; organization_id: string } | { error: string; status: number }> {
+  const defaultOrgId =
+    process.env.DEFAULT_ORGANIZATION_ID?.trim() || DEFAULT_ORGANIZATION_ID
+
+  const { data: membership, error: memberError } = await admin
+    .from('organization_members')
+    .select('role, organization_id')
+    .eq('wallet_address', address)
+    .maybeSingle()
+
+  if (memberError) {
+    console.error('[auth/verify] membership lookup', memberError)
+    return { error: 'MEMBERSHIP_LOOKUP_FAILED', status: 500 }
+  }
+
+  if (membership?.role && isRole(membership.role) && isPrivilegedRole(membership.role)) {
+    return {
+      role: membership.role,
+      organization_id: membership.organization_id as string,
+    }
+  }
+
+  // Existing viewer row or no row → public viewer on default org
+  if (membership?.role === 'viewer' && membership.organization_id) {
+    return {
+      role: 'viewer',
+      organization_id: membership.organization_id as string,
+    }
+  }
+
+  const { error: upsertError } = await admin.from('organization_members').upsert(
+    {
+      organization_id: defaultOrgId,
+      wallet_address: address,
+      role: 'viewer',
+    },
+    { onConflict: 'organization_id,wallet_address' },
+  )
+
+  if (upsertError) {
+    console.error('[auth/verify] viewer auto-enroll', upsertError)
+    return { error: 'VIEWER_ENROLL_FAILED', status: 500 }
+  }
+
+  return { role: 'viewer', organization_id: defaultOrgId }
+}
 
 export async function POST(request: Request) {
   try {
@@ -35,27 +95,9 @@ export async function POST(request: Request) {
     }
 
     const admin = createAdminClient()
-
-    // Must already be an organization member (seeded or added by admin)
-    const { data: membership, error: memberError } = await admin
-      .from('organization_members')
-      .select('role, organization_id')
-      .eq('wallet_address', address)
-      .maybeSingle()
-
-    if (memberError) {
-      console.error('[auth/verify] membership lookup', memberError)
-      return NextResponse.json({ error: 'MEMBERSHIP_LOOKUP_FAILED' }, { status: 500 })
-    }
-
-    if (!membership) {
-      return NextResponse.json(
-        {
-          error: 'ACCESS_DENIED',
-          message: 'This wallet is not a member of any organization.',
-        },
-        { status: 403 },
-      )
+    const membership = await resolveMembership(admin, address)
+    if ('error' in membership) {
+      return NextResponse.json({ error: membership.error }, { status: membership.status })
     }
 
     const email = walletAuthEmail(address)
@@ -77,7 +119,6 @@ export async function POST(request: Request) {
     if (created?.user) {
       userId = created.user.id
     } else {
-      // User likely exists — resolve by email via list filter
       const { data: listed, error: listError } = await admin.auth.admin.listUsers({
         page: 1,
         perPage: 200,
@@ -106,7 +147,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Upsert profile (service role bypasses RLS)
     const { error: profileError } = await admin.from('profiles').upsert(
       {
         id: userId,
@@ -121,7 +161,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'PROFILE_UPSERT_FAILED' }, { status: 500 })
     }
 
-    // Establish cookie session for the browser client
     const supabase = await createClient()
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
@@ -133,14 +172,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'SESSION_CREATE_FAILED' }, { status: 500 })
     }
 
-    const role = membership.role as Role
-
     return NextResponse.json({
       ok: true,
       wallet: address,
-      role,
+      role: membership.role,
       organizationId: membership.organization_id,
-      redirectTo: roleHomePath(role),
+      redirectTo: roleHomePath(membership.role),
     })
   } catch (err) {
     console.error('[auth/verify]', err)

@@ -11,14 +11,18 @@ import {
 } from '@defi-sentinel/shared'
 import { isAddress, type Address } from 'viem'
 import { getPositionState } from './aave/reader'
-import { parseCliArgs, type AgentMode, getNetworkConfig } from './config'
+import { createGeminiClient } from './brain/gemini'
+import type { BrainResult } from './brain/types'
+import { parseCliArgs, getNetworkConfig, hardGasCapGwei } from './config'
 import { buildDecision, decideAction, explainDecision } from './formula/health-factor'
 import { runGuardrails } from './guardrails/pipeline'
+import { runDoctor, runListWorkflows } from './keeperhub/doctor'
 import { executeViaKeeperHub } from './keeperhub/execute'
+import { runKhCli } from './keeperhub/kh-cli'
 
 /**
- * Agent entry — Phase 4: formula → guardrails → KeeperHub (Turnkey) execution.
- * Gemini + poller land in later phases. Never import from apps/web.
+ * Agent entry — Phase 5: formula → Gemini brain → guardrails → KeeperHub.
+ * Never import from apps/web. Gemini is untrusted; amounts stay formula/policy-only.
  */
 async function main() {
   const args = parseCliArgs(process.argv.slice(2))
@@ -29,7 +33,27 @@ async function main() {
   console.log(`  poll interval: ${POLL_INTERVAL_HOURS}h (scheduler in Phase 6)`)
   console.log(`  mode: ${args.mode}`)
 
-  if (args.mode === 'force-soft' || args.mode === 'force-safe' || args.mode === 'guard') {
+  if (args.mode === 'doctor') {
+    process.exitCode = await runDoctor(args.transport)
+    return
+  }
+
+  if (args.mode === 'list-workflows') {
+    process.exitCode = await runListWorkflows()
+    return
+  }
+
+  if (args.mode === 'kh') {
+    process.exitCode = runKhCli(args.khArgs)
+    return
+  }
+
+  if (
+    args.mode === 'force-soft' ||
+    args.mode === 'force-safe' ||
+    args.mode === 'guard' ||
+    args.mode === 'chat'
+  ) {
     await runGuardedAction(args)
     return
   }
@@ -48,8 +72,13 @@ async function main() {
 
   console.log('[agent] idle — press Ctrl+C to stop')
   console.log('[agent] tips:')
-  console.log('  pnpm --filter agent force-soft -- --actor 0xOperator --mock-hf 1.2')
-  console.log('  pnpm --filter agent force-soft -- --actor 0x… --mock-hf 1.2 --dry-run-keeper')
+  console.log(
+    '  pnpm --filter agent chat -- --actor 0xOp --message "repay 20% if needed" --mock-hf 1.15',
+  )
+  console.log('  pnpm --filter agent force-soft -- --actor 0xOp --mock-hf 1.2 --transport rest')
+  console.log('  pnpm --filter agent agent-doctor')
+  console.log('  pnpm --filter agent list-workflows')
+  console.log('  pnpm --filter agent kh -- workflow list')
 
   const shutdown = () => {
     console.log('\n[agent] graceful shutdown')
@@ -63,11 +92,10 @@ async function main() {
 async function runDecide(args: ReturnType<typeof parseCliArgs>) {
   if (args.mockHf !== undefined) {
     const action = decideAction(args.mockHf)
-    const reason = explainDecision(action, args.mockHf)
     console.log('\n--- Decision (mock HF, no RPC) ---')
     console.log(`  health_factor: ${args.mockHf}`)
     console.log(`  action: ${formatAction(action)}`)
-    console.log(`  reason: ${reason}`)
+    console.log(`  reason: ${explainDecision(action, args.mockHf)}`)
     return
   }
 
@@ -78,8 +106,6 @@ async function runDecide(args: ReturnType<typeof parseCliArgs>) {
   }
 
   const wallet = args.wallet as Address
-  console.log(`  wallet: ${wallet}`)
-
   let position: PositionState
   try {
     position = await getPositionState(args.network, wallet)
@@ -97,21 +123,20 @@ async function runDecide(args: ReturnType<typeof parseCliArgs>) {
 }
 
 async function runGuardedAction(args: ReturnType<typeof parseCliArgs>) {
-  const action = actionForMode(args.mode)
-  if (!action) {
+  const actor = args.actor
+  if (!actor || !isAddress(actor)) {
+    console.error('[agent] requires --actor 0xOperatorWallet')
     process.exitCode = 1
     return
   }
 
-  const actor = args.actor
-  if (!actor || !isAddress(actor)) {
-    console.error('[agent] force/guard requires --actor 0xOperatorWallet')
+  if (args.mode === 'chat' && !args.message?.trim()) {
+    console.error('[agent] chat requires --message "…"')
     process.exitCode = 1
     return
   }
 
   let position: PositionState
-
   if (args.mockHf !== undefined) {
     position = {
       protocol: 'AaveV3',
@@ -138,27 +163,95 @@ async function runGuardedAction(args: ReturnType<typeof parseCliArgs>) {
     }
   }
 
-  const finalAction = args.mode === 'guard' ? decideAction(position.health_factor) : action
+  // 1) Formula (deterministic)
+  const formulaAction =
+    args.mode === 'force-soft'
+      ? ({ type: 'SOFT_REBALANCE', repayPct: SOFT_REBALANCE_REPAY_PCT } as Action)
+      : args.mode === 'force-safe'
+        ? ({ type: 'SAFE_EXIT' } as Action)
+        : decideAction(position.health_factor)
 
   printPosition(position)
+  console.log('\n--- Formula ---')
+  console.log(`  action: ${formatAction(formulaAction)}`)
+  console.log(`  reason: ${explainDecision(formulaAction, position.health_factor)}`)
+
+  // 2) Gemini brain (after formula, before guardrails) — untrusted
+  let finalAction = formulaAction
+  let gasGwei = args.gasGwei
+  let brain: BrainResult | undefined
+
+  if (args.useBrain) {
+    const gemini = createGeminiClient()
+    const operatorMessage =
+      args.message ??
+      (args.mode === 'force-soft'
+        ? 'force soft rebalance'
+        : args.mode === 'force-safe'
+          ? 'force safe exit'
+          : args.mode === 'guard'
+            ? 'check status and rebalance if needed'
+            : undefined)
+
+    console.log('\n--- Gemini brain ---')
+    console.log(`  configured: ${gemini.configured}`)
+    console.log(`  message: ${operatorMessage ?? '(none)'}`)
+
+    brain = await gemini.runBrain({
+      position,
+      formulaAction,
+      networkLabel: NETWORK_LABEL[args.network],
+      hardGasCapGwei: hardGasCapGwei(),
+      softRepayPct: SOFT_REBALANCE_REPAY_PCT,
+      operatorMessage,
+    })
+
+    // force-* CLI still overrides NL if operator used force-soft/safe explicitly
+    if (args.mode === 'force-soft') {
+      finalAction = { type: 'SOFT_REBALANCE', repayPct: SOFT_REBALANCE_REPAY_PCT }
+    } else if (args.mode === 'force-safe') {
+      finalAction = { type: 'SAFE_EXIT' }
+    } else {
+      finalAction = brain.resolvedAction
+    }
+
+    // Prefer CLI --gas-gwei only if user set non-default path: if message chat, use brain gas
+    if (args.mode === 'chat' || !process.argv.some((a) => a.startsWith('--gas-gwei'))) {
+      gasGwei = brain.gas.gasPriceGwei
+    }
+
+    console.log(`  intent: ${brain.intent.kind} (confidence ${brain.intent.confidence})`)
+    console.log(`  resolved action: ${formatAction(finalAction)}`)
+    console.log(`  gas (gwei): ${gasGwei} [${brain.gas.source}]`)
+    console.log(`  thought: ${brain.llmReasoning.thought_summary}`)
+    console.log(`  tool: ${brain.llmReasoning.proposed_tool_call}`)
+    if (brain.notes.length) console.log(`  notes: ${brain.notes.join('; ')}`)
+  } else {
+    console.log(`\n--- Brain skipped ---`)
+    console.log(`  action: ${formatAction(finalAction)}`)
+    console.log(`  gas (gwei): ${gasGwei}`)
+  }
+
   console.log('\n--- Proposed action ---')
   console.log(`  action: ${formatAction(finalAction)}`)
   console.log(`  actor: ${actor}`)
-  console.log(`  gas (gwei): ${args.gasGwei}`)
+  console.log(`  gas (gwei): ${gasGwei}`)
 
   const pool = getNetworkConfig(args.network).poolAddress
 
-  // Guardrails write audit on reject; skip pass-audit so execution path owns final row
+  // 3) Guardrails (always after Gemini)
   const result = await runGuardrails({
     actorWallet: actor,
     action: finalAction,
     position,
-    gasPriceGwei: args.gasGwei,
+    gasPriceGwei: gasGwei,
     targetContract: pool,
     triggerType: 'MANUAL_OPERATOR',
     organizationId: args.orgId,
-    writeAudit: finalAction.type !== 'NONE' && !args.execute,
+    writeAudit: args.writeAudit,
+    auditPasses: !args.execute || finalAction.type === 'NONE',
     dryRunAudit: args.dryRunAudit,
+    llmReasoning: brain?.llmReasoning,
   })
 
   console.log('\n--- Guardrails ---')
@@ -169,19 +262,21 @@ async function runGuardedAction(args: ReturnType<typeof parseCliArgs>) {
   console.log(`  role: ${result.role?.role ?? '—'}`)
 
   if (!result.allowed) {
-    console.error('\n[agent] REJECTED — execution blocked (no KeeperHub call)')
+    console.error('\n[agent] REJECTED — Gemini cannot bypass guardrails')
     process.exitCode = 1
     return
   }
 
   if (finalAction.type === 'NONE') {
     console.log('\n[agent] action NONE — nothing to execute')
+    if (brain?.llmReasoning) {
+      console.log(`  summary: ${brain.llmReasoning.thought_summary}`)
+    }
     return
   }
 
   if (!args.execute) {
-    console.log('\n[agent] guardrails PASSED — pass --execute / use force-* to call KeeperHub')
-    console.log(`  effective repay %: ${result.effectiveRepayPct}`)
+    console.log('\n[agent] guardrails PASSED — use force-* / chat without --no-execute to run KeeperHub')
     return
   }
 
@@ -191,6 +286,7 @@ async function runGuardedAction(args: ReturnType<typeof parseCliArgs>) {
     return
   }
 
+  // 4) KeeperHub
   console.log('\n--- KeeperHub ---')
   console.log(`  dryRun: ${args.dryRunKeeper}`)
   console.log('  keys: never loaded in agent (Turnkey via KeeperHub)')
@@ -203,47 +299,33 @@ async function runGuardedAction(args: ReturnType<typeof parseCliArgs>) {
     actorWallet: actor,
     triggerType: 'MANUAL_OPERATOR',
     effectiveRepayPct: result.effectiveRepayPct,
-    gasPriceGwei: args.gasGwei,
-    rulesChecked: result.rulesChecked,
+    gasPriceGwei: gasGwei,
+    rulesChecked: [...result.rulesChecked, 'GEMINI_REVALIDATED'],
+    llmReasoning: brain?.llmReasoning,
     dryRun: args.dryRunKeeper,
     dryRunAudit: args.dryRunAudit,
+    transport: args.transport,
   })
 
   console.log(`  execution_status: ${exec.executionStatus}`)
   console.log(`  allowed: ${exec.allowed}`)
   if (exec.keeperhub) {
+    console.log(`  transport: ${exec.keeperhub.transport ?? args.transport}`)
     console.log(`  kh_execution: ${exec.keeperhub.executionId}`)
     console.log(`  kh_status: ${exec.keeperhub.status}`)
-    console.log(`  simulation: ${exec.keeperhub.simulationStatus}`)
     if (exec.keeperhub.txHash) console.log(`  tx_hash: ${exec.keeperhub.txHash}`)
   }
   if (exec.auditExecutionId) console.log(`  audit: ${exec.auditExecutionId}`)
-  if (exec.violations.length) console.log(`  violations: ${exec.violations.join('; ')}`)
+  if (brain?.llmReasoning) {
+    console.log(`  llm_summary: ${brain.llmReasoning.thought_summary}`)
+  }
 
   if (!exec.allowed) {
     process.exitCode = 1
     return
   }
 
-  console.log('\n[agent] Phase 4 path complete')
-  if (!exec.keeperhub?.txHash) {
-    console.log(
-      '  note: workflow succeeded without tx_hash — ensure KeeperHub workflow has Aave repay steps for on-chain Soft Rebalance',
-    )
-  }
-}
-
-function actionForMode(mode: AgentMode): Action | null {
-  if (mode === 'force-soft') {
-    return { type: 'SOFT_REBALANCE', repayPct: SOFT_REBALANCE_REPAY_PCT }
-  }
-  if (mode === 'force-safe') {
-    return { type: 'SAFE_EXIT' }
-  }
-  if (mode === 'guard') {
-    return { type: 'NONE' }
-  }
-  return null
+  console.log('\n[agent] Phase 5 path complete (formula → brain → guardrails → KeeperHub)')
 }
 
 function printPosition(position: PositionState) {
@@ -270,12 +352,11 @@ function printFormulaSelfCheck() {
 }
 
 function printGuardrailSelfCheck() {
-  console.log('\n--- Guardrail + execution order ---')
-  console.log('  1. ROLE_VALIDATION')
-  console.log('  2. CIRCUIT_BREAKER_OPEN')
-  console.log('  3. HARD_LIMITS')
-  console.log('  4. AAVE_CLOSE_FACTOR')
-  console.log('  5. HARD_GAS_CAP → KeeperHub execute (Turnkey) → audit')
+  console.log('\n--- Pipeline order ---')
+  console.log('  1. FORMULA (deterministic amounts)')
+  console.log('  2. GEMINI brain (intent + gas + summary) — untrusted')
+  console.log('  3. GUARDRAILS (role, circuit, hard limits, close factor)')
+  console.log('  4. KEEPERHUB (Turnkey) + audit with llm_reasoning')
 }
 
 function formatHf(hf: number): string {

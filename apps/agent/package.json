@@ -11,6 +11,10 @@
     "force-soft": "tsx src/index.ts --force-soft",
     "force-safe": "tsx src/index.ts --force-safe",
     "guard": "tsx src/index.ts --guard",
+    "chat": "tsx src/index.ts --chat",
+    "agent-doctor": "tsx src/index.ts --doctor",
+    "list-workflows": "tsx src/index.ts --list-workflows",
+    "kh": "tsx src/index.ts kh",
     "seed-roles": "tsx src/seed-roles.ts",
     "verify-live": "tsx src/verify-live.ts",
     "type-check": "tsc --noEmit",
@@ -19,9 +23,12 @@
   },
   "dependencies": {
     "@defi-sentinel/shared": "workspace:*",
+    "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.112.0",
     "dotenv": "^16.4.7",
-    "viem": "^2.55.10"
+    "viem": "^2.55.10",
+    "zod": "^3.25.28"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

@@ -26,7 +26,8 @@ export interface AuditLogPayload {
     debt_usd: number
   }
   llm_reasoning?: {
-    model: 'gemini-2.5-flash'
+    /** e.g. gemini-2.0-flash — see GEMINI_MODEL env */
+    model: string
     thought_summary: string
     proposed_tool_call: string
   }

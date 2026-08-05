@@ -170,10 +170,7 @@ Recent Audit Trail (compact table – last 5 entries)
 
 ---
 
-### 5.3 Actions / Operator Console (`/actions`)
 
-```
-Page Title: Operator Console
 
 ┌────────────────────────────────────────────────────────────┐
 │ Natural Language Command                                   │
@@ -196,7 +193,7 @@ Recent Manual Actions table
 
 ---
 
-### 5.4 Audit Trail (`/audit`)
+### 5.3 Audit Trail (`/audit`)
 
 ```
 Page Title + Filter bar

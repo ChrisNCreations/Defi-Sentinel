@@ -60,6 +60,20 @@
 - [x] Unit tests + live execute against org workflow
 - [x] Workflow blueprint `keeperhub/workflows/aave-rebalance.json`
 
-## Phase 5+
+## Phase 5 – Gemini Integration (Brain)
+
+- [x] `brain/gemini.ts` + prompts + revalidate (clamp gas, resolve intent)
+- [x] Wire formula → brain → guardrails → KeeperHub
+- [x] `llm_reasoning` on audit rows
+- [x] CLI `chat --message "…"`
+- [x] Unit tests (mocked Gemini + heuristics)
+
+## Phase 4b – MCP + CLI (additive)
+
+- [x] `KeeperHubExecutor` interface; REST default
+- [x] Optional MCP client (`execute_workflow` + `get_execution` only; no marketplace)
+- [x] CLI: `doctor`, `list-workflows`, `--transport`, optional `kh` wrapper
+
+## Phase 6+
 
 See `docs/Build phase.md`.

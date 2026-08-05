@@ -3,8 +3,10 @@ import {
   type NetworkId,
 } from '@defi-sentinel/shared'
 import type { Address } from 'viem'
+import { parseTransport, type KeeperHubTransport } from './keeperhub/executor'
 
 export type { NetworkId }
+export type { KeeperHubTransport }
 
 export interface NetworkConfig {
   id: NetworkId
@@ -12,7 +14,17 @@ export interface NetworkConfig {
   poolAddress: Address
 }
 
-export type AgentMode = 'idle' | 'once' | 'decide' | 'force-soft' | 'force-safe' | 'guard'
+export type AgentMode =
+  | 'idle'
+  | 'once'
+  | 'decide'
+  | 'force-soft'
+  | 'force-safe'
+  | 'guard'
+  | 'chat'
+  | 'doctor'
+  | 'list-workflows'
+  | 'kh'
 
 const DEFAULT_RPC: Record<NetworkId, string> = {
   'base-sepolia': 'https://sepolia.base.org',
@@ -62,7 +74,7 @@ function flagValue(argv: string[], name: string): string | undefined {
   return undefined
 }
 
-/** Parse CLI flags for decide / force / guard modes */
+/** Parse CLI flags for decide / force / guard / chat modes */
 export function parseCliArgs(argv: string[]): {
   mode: AgentMode
   once: boolean
@@ -73,32 +85,63 @@ export function parseCliArgs(argv: string[]): {
   mockHf?: number
   gasGwei: number
   orgId?: string
+  message?: string
   dryRunAudit: boolean
   writeAudit: boolean
-  /** Skip KeeperHub execute (payload + guardrails only) */
   dryRunKeeper: boolean
-  /** After guardrails, call KeeperHub (default true for force-* modes) */
   execute: boolean
+  useBrain: boolean
+  transport: KeeperHubTransport
+  /** Extra args after `kh` subcommand */
+  khArgs: string[]
 } {
   const once = argv.includes('--once')
   const decide = argv.includes('--decide') || argv.includes('decide')
   const forceSoft = argv.includes('--force-soft') || argv.includes('force-soft')
   const forceSafe = argv.includes('--force-safe') || argv.includes('force-safe')
   const guard = argv.includes('--guard') || argv.includes('guard')
+  const chat = argv.includes('--chat') || argv.includes('chat') || argv.includes('ask')
+  const doctor = argv.includes('--doctor') || argv.includes('doctor')
+  const listWorkflows =
+    argv.includes('--list-workflows') ||
+    argv.includes('list-workflows') ||
+    argv.includes('workflows')
+  const khIdx = argv.findIndex((a) => a === 'kh' || a === '--kh')
 
   let mode: AgentMode = 'idle'
-  if (forceSoft) mode = 'force-soft'
+  if (doctor) mode = 'doctor'
+  else if (listWorkflows) mode = 'list-workflows'
+  else if (khIdx >= 0) mode = 'kh'
+  else if (chat) mode = 'chat'
+  else if (forceSoft) mode = 'force-soft'
   else if (forceSafe) mode = 'force-safe'
   else if (guard) mode = 'guard'
   else if (decide || flagValue(argv, '--wallet') || flagValue(argv, '--mock-hf')) mode = 'decide'
   else if (once) mode = 'once'
 
+  const transport = parseTransport(
+    flagValue(argv, '--transport') ?? process.env.KEEPERHUB_TRANSPORT,
+    'rest',
+  )
+  const khArgs = khIdx >= 0 ? argv.slice(khIdx + 1) : []
+
   const wallet =
     flagValue(argv, '--wallet') ??
     flagValue(argv, '-w') ??
-    // positional after decide/force/guard
     (() => {
-      const keys = ['decide', '--decide', 'force-soft', '--force-soft', 'force-safe', '--force-safe', 'guard', '--guard']
+      const keys = [
+        'decide',
+        '--decide',
+        'force-soft',
+        '--force-soft',
+        'force-safe',
+        '--force-safe',
+        'guard',
+        '--guard',
+        'chat',
+        '--chat',
+        'ask',
+      ]
       for (const k of keys) {
         const i = argv.indexOf(k)
         if (i >= 0) {
@@ -114,20 +157,32 @@ export function parseCliArgs(argv: string[]): {
   const mockHfRaw = flagValue(argv, '--mock-hf')
   const gasRaw = flagValue(argv, '--gas-gwei')
   const orgId = flagValue(argv, '--org')
+  const message =
+    flagValue(argv, '--message') ??
+    flagValue(argv, '-m') ??
+    flagValue(argv, '--prompt')
   const mockHf = mockHfRaw !== undefined ? Number(mockHfRaw) : undefined
-  const gasGwei = gasRaw !== undefined && Number.isFinite(Number(gasRaw))
-    ? Number(gasRaw)
-    : Number(readEnv('HARD_GAS_CAP_GWEI') ?? 20)
+  const gasGwei =
+    gasRaw !== undefined && Number.isFinite(Number(gasRaw))
+      ? Number(gasRaw)
+      : Number(readEnv('HARD_GAS_CAP_GWEI') ?? 20)
 
   const dryRunKeeper =
     argv.includes('--dry-run-keeper') ||
     readEnv('KEEPERHUB_DRY_RUN') === '1' ||
     readEnv('KEEPERHUB_DRY_RUN') === 'true'
 
-  // force-* executes by default; --no-execute keeps Phase 3-only behavior
   const execute =
     !argv.includes('--no-execute') &&
-    (mode === 'force-soft' || mode === 'force-safe' || argv.includes('--execute'))
+    (mode === 'force-soft' ||
+      mode === 'force-safe' ||
+      mode === 'chat' ||
+      argv.includes('--execute'))
+
+  // Brain runs for chat always; for force-* unless --no-brain
+  const useBrain =
+    !argv.includes('--no-brain') &&
+    (mode === 'chat' || mode === 'force-soft' || mode === 'force-safe' || mode === 'guard')
 
   return {
     mode,
@@ -139,10 +194,14 @@ export function parseCliArgs(argv: string[]): {
     mockHf: mockHf !== undefined && Number.isFinite(mockHf) ? mockHf : undefined,
     gasGwei,
     orgId,
+    message,
     dryRunAudit: argv.includes('--dry-run-audit') || !readEnv('SUPABASE_SERVICE_ROLE_KEY'),
     writeAudit: !argv.includes('--no-audit'),
     dryRunKeeper,
     execute,
+    useBrain,
+    transport,
+    khArgs,
   }
 }
 

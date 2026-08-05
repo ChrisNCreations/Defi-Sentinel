@@ -1,10 +1,12 @@
 -- 004_seed.sql
--- Seed default org + hard limits + circuit breaker + test wallets.
+-- Seed default org + hard limits + circuit breaker + privileged wallets.
 --
--- Default test wallets (Anvil / Foundry accounts — replace for real testnet ops):
---   Admin:    0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
---   Operator: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
---   Viewer:   0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
+-- Privileged (explicit membership only):
+--   Admin:    0x25D8bE971f8c5E7C6aFC8645a08D43B506A8e051
+--   Operator: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8  (Anvil #1 / replace as needed)
+--
+-- Viewer: any other wallet that SIWE-connects is auto-enrolled as viewer
+--         on this default organization (see apps/web/app/api/auth/verify).
 --
 -- Profiles are created at SIWE login time (linked to auth.users).
 
@@ -45,32 +47,22 @@ values (
 )
 on conflict (organization_id) do nothing;
 
--- Admin
+-- Admin (privileged — never auto-assigned)
 insert into public.organization_members (organization_id, wallet_address, role)
 values (
   'a0000000-0000-4000-8000-000000000001',
-  '0x25D8bE971f8c5E7C6aFC8645a08D43B506A8e051',
+  '0x25d8be971f8c5e7c6afc8645a08d43b506a8e051',
   'admin'
 )
 on conflict (organization_id, wallet_address) do update
   set role = excluded.role;
 
--- Operator
+-- Operator (privileged — never auto-assigned)
 insert into public.organization_members (organization_id, wallet_address, role)
 values (
   'a0000000-0000-4000-8000-000000000001',
   '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
   'operator'
-)
-on conflict (organization_id, wallet_address) do update
-  set role = excluded.role;
-
--- Viewer (cannot read audit_logs under RLS)
-insert into public.organization_members (organization_id, wallet_address, role)
-values (
-  'a0000000-0000-4000-8000-000000000001',
-  '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc',
-  'viewer'
 )
 on conflict (organization_id, wallet_address) do update
   set role = excluded.role;

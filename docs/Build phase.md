@@ -114,14 +114,14 @@ A coding assistant should complete one phase fully (including basic tests) befor
 **Goal:** Natural language + gas estimation + human-readable audit text.
 
 ### Tasks
-- [ ] Gemini client (`brain/gemini.ts`) using official SDK
-- [ ] Prompt templates for:
+- [x] Gemini client (`brain/gemini.ts`) using official SDK
+- [x] Prompt templates for:
   - Gas / priority-fee estimation
   - Natural-language intent parsing
   - Short `thought_summary` generation
-- [ ] Wire Gemini **after** formula decision and **before** guardrails final check
-- [ ] Treat Gemini output as untrusted – always re-validate
-- [ ] Add `llm_reasoning` section to audit log
+- [x] Wire Gemini **after** formula decision and **before** guardrails final check
+- [x] Treat Gemini output as untrusted – always re-validate
+- [x] Add `llm_reasoning` section to audit log
 
 ### Exit Criteria
 - Operator can type “repay 20 % if needed” and the agent executes correctly
@@ -153,8 +153,7 @@ A coding assistant should complete one phase fully (including basic tests) befor
 **Goal:** Complete operator and admin experience.
 
 ### Tasks
-- [ ] `/dashboard` – live HF, collateral, debt, circuit status, next poll
-- [ ] `/actions` – natural-language box + Force Soft / Force Safe-Exit buttons
+- [ ] `/dashboard` – live HF, collateral, debt, circuit status, next poll, natural-language box + Force Soft / Force Safe-Exit buttons 
 - [ ] `/audit` – filterable table + expandable row with full payload
 - [ ] `/admin` – hard limits form, member management, circuit reset, Discord webhook
 - [ ] `/team` – simple role list

@@ -72,6 +72,28 @@ export interface KeeperHubRunResult {
   retryAttempts: number
   raw?: KeeperHubExecutionRecord
   error?: string
+  /** rest (default) or mcp */
+  transport?: KeeperHubTransport
+}
+
+export type KeeperHubTransport = 'rest' | 'mcp'
+
+/** Shared execute surface — REST and MCP both implement this */
+export interface KeeperHubExecutor {
+  readonly transport: KeeperHubTransport
+  readonly workflowId: string
+  readonly configured: boolean
+  executeAndWait(
+    input: KeeperHubWorkflowInput,
+    options?: { maxRetries?: number },
+  ): Promise<KeeperHubRunResult>
+}
+
+export interface WorkflowSummary {
+  id: string
+  name: string
+  description?: string
+  enabled?: boolean
 }
 
 export interface MapActionParams {

@@ -9,24 +9,24 @@ This is written so a designer or coding assistant can implement the UI accuratel
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│                                                             │
-│                    [DeFi Sentinel Logo]                     │
-│                                                             │
-│              Autonomous Treasury Rebalancer                 │
-│                     & Yield Sentinel                        │
-│                                                             │
-│         ┌─────────────────────────────────────┐             │
-│         │                                     │             │
-│         │     Connect your wallet to          │             │
-│         │     continue                        │             │
-│         │                                     │             │
-│         │     [  Connect Wallet  ]            │             │
-│         │                                     │             │
-│         └─────────────────────────────────────┘             │
-│                                                             │
-│              Supported: Base Sepolia / Ethereum Sepolia     │
-│                                                             │
+│    |                                                        │
+│    |                                                        │
+│    |               [DeFi Sentinel Logo]                     │
+│    |                                                        │
+│    |         Autonomous Treasury Rebalancer                 │
+│    |                & Yield Sentinel                        │
+│    |                                                        │
+│    |    ┌─────────────────────────────────────┐             │
+│    |    │                                     │             │
+│    |    │     Connect your wallet to          │             │
+│    |    │     continue                        │             │
+│    |    │                                     │             │
+│    |    │     [  Connect Wallet  ]            │             │
+│    |    │                                     │             │
+│    |    └─────────────────────────────────────┘             │
+│    |                                                        │
+│    |         Supported: Base Sepolia / Ethereum Sepolia     │
+│    |                                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -78,48 +78,8 @@ This is written so a designer or coding assistant can implement the UI accuratel
 
 ---
 
-### 3. Actions / Operator Console (`/actions`)
 
-**Layout Type:** Command-focused
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Top Navbar                                                  │
-├────────────┬────────────────────────────────────────────────┤
-│            │  Operator Console                              │
-│  Sidebar   │                                                │
-│            │  ┌──────────────────────────────────────────┐  │
-│            │  │  Natural Language Command                │  │
-│            │  │  ┌────────────────────────────────────┐  │  │
-│            │  │  │ Check health and repay if needed...│  │  │
-│            │  │  └────────────────────────────────────┘  │  │
-│            │  │              [ Send to Agent ]           │  │
-│            │  └──────────────────────────────────────────┘  │
-│            │                                                │
-│            │  Quick Actions                                 │
-│            │  [ Force Soft Rebalance ]  [ Force Safe-Exit ] │
-│            │  [ Emergency Self-Repay ]                      │
-│            │                                                │
-│            │  Current Execution Status                      │
-│            │  ┌──────────────────────────────────────────┐  │
-│            │  │  Status: Simulating... → Broadcasting... │  │
-│            │  │  Tx Hash: 0x7f8a9b...                    │  │
-│            │  │  Gas used: 142,500                       │  │
-│            │  └──────────────────────────────────────────┘  │
-│            │                                                │
-│            │  Recent Manual Actions (table)                 │
-└────────────┴────────────────────────────────────────────────┘
-```
-
-**Details:**
-- Large prominent text area for natural language
-- Three clear action buttons
-- Live status panel that updates in real time during execution
-- History of the user’s own manual triggers at the bottom
-
----
-
-### 4. Audit Trail (`/audit`)
+### 3. Audit Trail (`/audit`)
 
 **Layout Type:** Data table + detail drawer
 

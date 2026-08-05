@@ -33,9 +33,21 @@ export interface GuardrailContext {
   triggerType: TriggerType
   /** Soft rebalance % override for testing */
   proposedRepayPct?: number
-  /** Persist REJECTED (and optional PASSED) audit rows */
+  /**
+   * Persist audit rows.
+   * - `false`: never write
+   * - `true` / default: write REJECTED always; write PASSED when `auditPasses` is true
+   */
   writeAudit?: boolean
+  /** When false, successful guardrail runs skip audit (execution path owns the final row). Default true. */
+  auditPasses?: boolean
   dryRunAudit?: boolean
+  /** Phase 5 LLM summary attached to audit (untrusted for amounts) */
+  llmReasoning?: {
+    model: string
+    thought_summary: string
+    proposed_tool_call: string
+  }
   /** DI for tests */
   memberLookup?: MemberLookup
   circuitStore?: CircuitStore
@@ -149,9 +161,10 @@ export async function runGuardrails(
   const allowed = violations.length === 0
   let auditExecutionId: string | undefined
 
+  // Always audit rejections unless writeAudit === false.
+  // Passes only when auditPasses !== false (set false when KeeperHub path will write the final row).
   const shouldAudit =
-    ctx.writeAudit !== false &&
-    (ctx.action.type !== 'NONE' || !allowed || ctx.writeAudit === true)
+    ctx.writeAudit !== false && (!allowed || (ctx.auditPasses !== false && ctx.action.type !== 'NONE'))
 
   // Audit rejections (and optional passes when writeAudit true)
   if (shouldAudit) {
@@ -166,6 +179,7 @@ export async function runGuardrails(
           rulesChecked: [...new Set(rulesChecked)],
           violations,
           executionStatus: allowed ? 'PENDING' : 'REJECTED',
+          llmReasoning: ctx.llmReasoning,
           dryRun: ctx.dryRunAudit,
         })
         auditExecutionId = audit.execution_id

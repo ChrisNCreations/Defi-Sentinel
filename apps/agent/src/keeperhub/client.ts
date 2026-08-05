@@ -1,8 +1,10 @@
 import type {
   KeeperHubExecuteStart,
   KeeperHubExecutionRecord,
+  KeeperHubExecutor,
   KeeperHubRunResult,
   KeeperHubWorkflowInput,
+  WorkflowSummary,
 } from './types'
 
 export interface KeeperHubClientOptions {
@@ -30,10 +32,11 @@ export class KeeperHubError extends Error {
 }
 
 /**
- * REST client for KeeperHub workflows.
+ * REST client for KeeperHub workflows (default transport).
  * Signing is always remote (Turnkey via KeeperHub) — this client never holds keys.
  */
-export class KeeperHubClient {
+export class KeeperHubClient implements KeeperHubExecutor {
+  readonly transport = 'rest' as const
   readonly apiKey: string
   readonly workflowId: string
   readonly baseUrl: string
@@ -55,6 +58,48 @@ export class KeeperHubClient {
 
   get configured(): boolean {
     return Boolean(this.apiKey && this.workflowId)
+  }
+
+  /** Org workflows only (GET /api/workflows) — not marketplace */
+  async listWorkflows(): Promise<WorkflowSummary[]> {
+    if (!this.apiKey) {
+      throw new KeeperHubError('KEEPERHUB_API_KEY missing', 'NOT_CONFIGURED')
+    }
+    const res = await this.fetchImpl(`${this.baseUrl}/workflows`, {
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        Accept: 'application/json',
+      },
+    })
+    const body = await res.json().catch(() => [])
+    KeeperHubClient.assertNoPrivateKeys(body)
+    if (!res.ok) {
+      throw new KeeperHubError(`List workflows failed: ${res.status}`, 'LIST_FAILED', res.status, body)
+    }
+    const rows = Array.isArray(body) ? body : []
+    return rows.map((w: { id?: string; name?: string; description?: string; enabled?: boolean }) => ({
+      id: String(w.id ?? ''),
+      name: String(w.name ?? ''),
+      description: w.description,
+      enabled: w.enabled,
+    }))
+  }
+
+  async ping(): Promise<{ ok: boolean; status: number; count?: number; error?: string }> {
+    if (!this.apiKey) return { ok: false, status: 0, error: 'no api key' }
+    try {
+      const res = await this.fetchImpl(`${this.baseUrl}/workflows`, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: 'application/json',
+        },
+      })
+      if (!res.ok) return { ok: false, status: res.status, error: await res.text() }
+      const body = (await res.json()) as unknown[]
+      return { ok: true, status: res.status, count: Array.isArray(body) ? body.length : undefined }
+    } catch (err) {
+      return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   /**
@@ -175,6 +220,7 @@ export class KeeperHubClient {
       simulationStatus: 'FAILED',
       retryAttempts: attempts,
       error: lastError ?? 'UNKNOWN',
+      transport: 'rest',
     }
   }
 
@@ -213,6 +259,7 @@ export class KeeperHubClient {
       retryAttempts,
       raw: record,
       error: record.error ?? undefined,
+      transport: 'rest',
     }
   }
 }

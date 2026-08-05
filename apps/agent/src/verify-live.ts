@@ -15,11 +15,13 @@ import {
 } from './guardrails/circuit-breaker'
 
 const ORG_ID = 'a0000000-0000-4000-8000-000000000001'
+/** Privileged seed only — viewers are public (any non-privileged wallet). */
 const SEED = {
-  admin: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+  admin: '0x25d8be971f8c5e7c6afc8645a08d43b506a8e051',
   operator: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-  viewer: '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc',
 } as const
+/** Synthetic public viewer for agent guardrail checks (not required in seed). */
+const PUBLIC_VIEWER = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
 function requireEnv(name: string): string {
   const v = process.env[name]
@@ -126,21 +128,42 @@ async function main() {
     else console.log(`  OK  ${role} ${wallet.slice(0, 8)}…`)
   }
 
+  // Optional: enroll a public viewer (simulates SIWE auto-enroll) for ROLE_INSUFFICIENT check
+  await sb.from('organization_members').upsert(
+    {
+      organization_id: orgId,
+      wallet_address: PUBLIC_VIEWER,
+      role: 'viewer',
+    },
+    { onConflict: 'organization_id,wallet_address' },
+  )
+  console.log(`  OK  public viewer (test) ${PUBLIC_VIEWER.slice(0, 10)}…`)
+
   // 3) Role validator (live)
   console.log('\n--- Role validator ---')
   const op = await validateRole(SEED.operator, ['admin', 'operator'])
-  const vw = await validateRole(SEED.viewer, ['admin', 'operator'])
+  const vw = await validateRole(PUBLIC_VIEWER, ['admin', 'operator'])
+  const unknown = await validateRole(
+    '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    ['admin', 'operator'],
+  )
   console.log(
     `  operator allowed=${op.allowed} role=${op.role} org=${op.organizationId?.slice(0, 8)}…`,
   )
   console.log(
-    `  viewer allowed=${vw.allowed} reason=${vw.reason} role=${vw.role}`,
+    `  public viewer allowed=${vw.allowed} reason=${vw.reason} role=${vw.role}`,
+  )
+  console.log(
+    `  unknown wallet allowed=${unknown.allowed} reason=${unknown.reason}`,
   )
   if (!op.allowed) throw new Error('Operator should pass')
   if (vw.allowed || vw.reason !== 'ROLE_INSUFFICIENT') {
-    throw new Error('Viewer should be ROLE_INSUFFICIENT')
+    throw new Error('Public viewer should be ROLE_INSUFFICIENT for execution')
   }
-  console.log('  OK role matrix')
+  if (unknown.allowed || unknown.reason !== 'WALLET_NOT_FOUND') {
+    throw new Error('Unknown wallet should be WALLET_NOT_FOUND for execution')
+  }
+  console.log('  OK role matrix (public viewers cannot execute)')
 
   // 4) Guardrail pipeline (live hard_limits + circuit)
   console.log('\n--- Guardrails pipeline ---')
@@ -169,7 +192,7 @@ async function main() {
   }
 
   const reject = await runGuardrails({
-    actorWallet: SEED.viewer,
+    actorWallet: PUBLIC_VIEWER,
     action: { type: 'SOFT_REBALANCE', repayPct: 20 },
     position,
     gasPriceGwei: 20,
@@ -178,10 +201,10 @@ async function main() {
     dryRunAudit: false,
   })
   console.log(
-    `  viewer soft: allowed=${reject.allowed} violations=${reject.violations.join(',')}`,
+    `  public viewer soft: allowed=${reject.allowed} violations=${reject.violations.join(',')}`,
   )
   if (reject.allowed || !reject.violations.includes('ROLE_INSUFFICIENT')) {
-    throw new Error('Viewer should be rejected')
+    throw new Error('Public viewer should be rejected for execution')
   }
 
   const gasReject = await runGuardrails({
