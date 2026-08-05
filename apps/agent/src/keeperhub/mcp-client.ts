@@ -8,7 +8,10 @@ import type {
   KeeperHubWorkflowInput,
 } from './types'
 
-/** Only these MCP tools are allowed (no marketplace / create / delete). */
+/**
+ * Only these MCP tools are allowed on the product path.
+ * No marketplace, no create/update/delete workflow (see docs/keeperhub-integration.md).
+ */
 export const MCP_TOOL_ALLOWLIST = new Set(['execute_workflow', 'get_execution', 'list_workflows'])
 
 const DEFAULT_MCP_URL = 'https://app.keeperhub.com/mcp'

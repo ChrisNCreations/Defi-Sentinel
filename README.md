@@ -92,14 +92,29 @@ Vercel project settings when ready:
 5. Hard limits cannot be overridden by Gemini or Operators  
 6. `audit_logs` is append-only  
 
+### KeeperHub (execution only)
+
+- **Decide** in our agent (formula + guardrails + optional Gemini).  
+- **Execute** a pinned org workflow via **REST** (default) or optional **MCP** — same key, no marketplace.  
+- Workflow **graphs** are built in KeeperHub UI; we do **not** call `create_workflow` / `update_workflow` on the product path.  
+- Details: [docs/keeperhub-integration.md](./docs/keeperhub-integration.md)
+
+```env
+# apps/agent/.env
+KEEPERHUB_TRANSPORT=rest   # or mcp
+# KEEPERHUB_MCP_URL=https://app.keeperhub.com/mcp
+```
+
 ## Docs
 
 - [Project overview](./docs/Project_overview.md)
 - [Architecture](./docs/architecture)
+- [KeeperHub integration](./docs/keeperhub-integration.md)
 - [Build phases](./docs/Build%20phase.md)
 - [Development](./docs/Development.md)
 - [Library usage](./docs/library-docs.md)
 - [Design system](./docs/design.md)
 - [UI layouts](./docs/ui%20layout.md)
+
 
 

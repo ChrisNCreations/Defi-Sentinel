@@ -72,7 +72,8 @@
 
 - [x] `KeeperHubExecutor` interface; REST default
 - [x] Optional MCP client (`execute_workflow` + `get_execution` only; no marketplace)
-- [x] CLI: `doctor`, `list-workflows`, `--transport`, optional `kh` wrapper
+- [x] CLI: `agent-doctor`, `list-workflows`, `--transport rest|mcp`, optional `kh` wrapper
+- [x] Docs: `docs/keeperhub-integration.md` + library/dev/architecture updates
 
 ## Phase 6+
 

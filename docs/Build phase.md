@@ -95,7 +95,9 @@ A coding assistant should complete one phase fully (including basic tests) befor
 **Goal:** Agent can submit a real transaction via KeeperHub + Turnkey.
 
 ### Tasks
-- [x] KeeperHub client (`keeperhub/client.ts`) – MCP or REST
+- [x] KeeperHub client (`keeperhub/client.ts`) – **REST default**
+- [x] Optional MCP transport (`execute_workflow` + `get_execution` only; no marketplace)
+- [x] Ops CLI: `agent-doctor`, `list-workflows`, optional `kh` wrapper
 - [x] Map Action → KeeperHub workflow payload
 - [x] Handle simulation result, tx hash, retries
 - [x] Respect hard gas cap
@@ -107,6 +109,8 @@ A coding assistant should complete one phase fully (including basic tests) befor
 - Forced Soft Rebalance from an Operator wallet produces a confirmed tx on Basescan
 - Audit log contains the complete structured payload
 - Failed simulation or gas-cap breach aborts cleanly
+
+**Note:** Product path does **not** call MCP `create_workflow` / `update_workflow`. Workflow graphs are configured in the KeeperHub UI and pinned by `KEEPERHUB_WORKFLOW_ID`.
 
 ---
 

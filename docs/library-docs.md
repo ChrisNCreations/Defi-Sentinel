@@ -215,27 +215,53 @@ export async function getUserAccountData(user: `0x${string}`) {
 
 ## 6. KeeperHub Client
 
-**Integration method:** HTTP / MCP (Model Context Protocol) as provided by KeeperHub.
+**Default integration:** REST API at `https://app.keeperhub.com/api`.  
+**Optional:** MCP at `https://app.keeperhub.com/mcp` (same org API key).
+
+See also: [docs/keeperhub-integration.md](./keeperhub-integration.md).
 
 ### Responsibilities of our client
-- Authenticate with the organization API key
-- Submit workflow payloads
-- Poll or receive status (tx hash, simulation result, final status)
-- Surface errors cleanly to the agent
+- Authenticate with the **organization** API key (`kh_…`)
+- Submit a **fixed** workflow payload for Soft Rebalance / Safe-Exit
+- Poll execution status (tx hash, simulation result, final status)
+- Surface errors cleanly to the agent and audit log
+
+### Transports (`createKeeperHubExecutor`)
+
+| Transport | Env | Implementation |
+|-----------|-----|----------------|
+| **rest** (default) | `KEEPERHUB_TRANSPORT=rest` | `POST /workflows/{id}/execute` + list executions |
+| **mcp** (optional) | `KEEPERHUB_TRANSPORT=mcp` | MCP tools `execute_workflow` + `get_execution` only |
 
 ```ts
-// apps/agent/src/keeperhub/client.ts (illustrative)
-export async function executeWorkflow(payload: WorkflowPayload) {
-  const res = await fetch(`${KEEPERHUB_API}/workflows/${WORKFLOW_ID}/execute`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.KEEPERHUB_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-  // handle response, retries, etc.
-}
+// apps/agent/src/keeperhub/executor.ts
+import { createKeeperHubExecutor } from './executor'
+
+const client = createKeeperHubExecutor({ transport: 'rest' }) // or 'mcp'
+await client.executeAndWait(workflowInput)
+```
+
+CLI override: `--transport rest|mcp` on `force-soft` / `chat`.
+
+### What we intentionally do **not** call
+- Marketplace: `call_workflow`, paid listings, x402 / MPP
+- Workflow mutation on the **product path**: `create_workflow`, `update_workflow`, `delete_workflow`
+- Open-ended protocol tools that skip formula + guardrails
+
+Workflow graph changes are done by humans in the [KeeperHub builder](https://app.keeperhub.com) (or external ops tooling), then pinned via `KEEPERHUB_WORKFLOW_ID`.
+
+### REST shape (default)
+
+```ts
+// apps/agent/src/keeperhub/client.ts
+await fetch(`${KEEPERHUB_API}/workflows/${WORKFLOW_ID}/execute`, {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${process.env.KEEPERHUB_API_KEY}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ input: keeperHubWorkflowInput }),
+})
 ```
 
 **Critical:** The agent never constructs raw signed transactions. KeeperHub + Turnkey handle signing under the workflow policy.

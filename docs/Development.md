@@ -68,12 +68,19 @@ NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_wc_project_id
 
 ### `apps/agent/.env`
 ```env
-SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=eyJ...          # service_role key from supabase start
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...          # service role — agent only
 
 GEMINI_API_KEY=your_gemini_key
-KEEPERHUB_API_KEY=your_kh_org_key
-KEEPERHUB_WORKFLOW_ID=wf_xxxx
+# GEMINI_MODEL=gemini-2.0-flash
+
+KEEPERHUB_API_KEY=kh_your_org_key
+KEEPERHUB_WORKFLOW_ID=your_workflow_id
+# rest (default) | mcp
+KEEPERHUB_TRANSPORT=rest
+# KEEPERHUB_MCP_URL=https://app.keeperhub.com/mcp
+# KEEPERHUB_MCP_FALLBACK_REST=1
+# KEEPERHUB_DRY_RUN=0
 
 AAVE_POOL_ADDRESS_BASE_SEPOLIA=0x...
 AAVE_POOL_ADDRESS_ETH_SEPOLIA=0x...
@@ -84,7 +91,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 HARD_GAS_CAP_GWEI=50
 ```
 
-**Never commit real keys.** Use `.env.example` files that contain only placeholders.
+**Never commit real keys.** Use `.env.example` files that contain only placeholders.  
+**Supabase URL** must be the project origin only (no `/rest/v1/` suffix).
 
 ---
 
@@ -113,12 +121,39 @@ pnpm type-check
 # Lint
 pnpm lint
 
-# Run agent once (no scheduler)
-pnpm --filter agent run once
+# Run agent once (formula + guardrail self-check)
+pnpm --filter agent once
 
-# Force a Soft Rebalance from CLI (Operator wallet required)
-pnpm --filter agent force-soft --wallet 0xYourOperatorAddress
+# Health check: env, REST, optional MCP, RPC
+pnpm --filter agent agent-doctor
+
+# List org workflows (not marketplace)
+pnpm --filter agent list-workflows
+
+# Force Soft Rebalance (Operator wallet in organization_members)
+pnpm --filter agent force-soft -- --actor 0xYourOperatorAddress --mock-hf 1.2
+
+# Same path via optional MCP transport
+pnpm --filter agent force-soft -- --actor 0x… --mock-hf 1.2 --transport mcp
+
+# Natural language (Gemini → formula → guardrails → KeeperHub)
+pnpm --filter agent chat -- --actor 0x… --message "repay 20% if needed" --mock-hf 1.15
+
+# Optional system KeeperHub CLI (install separately)
+pnpm --filter agent kh -- workflow list
 ```
+
+### How the agent talks to KeeperHub
+
+Product path (unchanged by transport):
+
+1. Formula (and optional Gemini) decides action  
+2. Guardrails (role, circuit, hard limits, close factor)  
+3. Execute **pinned** workflow `KEEPERHUB_WORKFLOW_ID` via REST (default) or MCP  
+4. Write Supabase `audit_logs`
+
+Ops helpers (`agent-doctor`, `list-workflows`, `kh`) do **not** replace that path.  
+See [keeperhub-integration.md](./keeperhub-integration.md).
 
 ---
 
@@ -210,8 +245,14 @@ Change the RPC URL and Aave Pool address in the agent `.env`. The frontend chain
 ### Debug a failed KeeperHub execution
 1. Look at the latest `audit_logs` row
 2. Check `execution_details.simulation_status` and `retry_attempts`
-3. Verify the workflow ID and organization API key
-4. Confirm the Turnkey policy still allows the required contracts
+3. Run `pnpm --filter agent agent-doctor` and `list-workflows`
+4. Verify `KEEPERHUB_WORKFLOW_ID` and org API key
+5. Confirm the workflow has real Aave write steps (not only a Manual trigger)
+6. Confirm Turnkey wallet is funded and policy allows required contracts
+
+### Roles (SIWE)
+- **Admin / Operator**: explicit rows in `organization_members` (seed or admin-managed)
+- **Viewer**: any other wallet — auto-enrolled as public viewer on login (dashboard only)
 
 ---
 
@@ -219,11 +260,14 @@ Change the RPC URL and Aave Pool address in the agent `.env`. The frontend chain
 
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
-| SIWE login fails | Wrong WalletConnect project ID or Supabase keys | Double-check `.env.local` |
-| Agent says `ROLE_INSUFFICIENT` | Wallet not in `organization_members` or wrong role | Add/fix via `/admin` |
-| Transaction reverts on Aave | Close factor or insufficient allowance | Agent already respects 50 % close factor; check debt token approval if needed |
-| Circuit breaker stuck | Previous failures | Admin resets it on `/admin` |
-| Gemini returns nonsense | Prompt drift or model change | Pin the model version and keep prompts in version control |
+| SIWE login fails | Wrong WalletConnect project ID or Supabase keys | Double-check `.env.local`; URL must not end with `/rest/v1/` |
+| Agent says `ROLE_INSUFFICIENT` | Actor not admin/operator | Seed or promote wallet; viewers cannot execute |
+| KH execute succeeds, no `tx_hash` | Workflow has no on-chain write steps | Add Aave repay nodes in KeeperHub builder |
+| MCP fails | Transport/protocol or tool names | Use `--transport rest` or `KEEPERHUB_MCP_FALLBACK_REST=1` |
+| `pnpm doctor` does something else | Conflicts with pnpm’s own doctor | Use `pnpm --filter agent agent-doctor` |
+| `kh` not found | Optional CLI not installed | Install from KeeperHub releases; not required for product |
+| Circuit breaker stuck | Previous failures | Admin resets on `/admin` |
+| Gemini fallback / 429 | Quota or model | Set `GEMINI_MODEL`; heuristics still resolve common intents |
 | Supabase types out of date | Schema changed | Re-run `supabase gen types` |
 
 ---

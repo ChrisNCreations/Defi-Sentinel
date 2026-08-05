@@ -49,24 +49,38 @@ This document is the single source of truth for the technical architecture. It i
 │    ├── brain/          Gemini client                        │
 │    ├── formula/        Pure HF → action engine              │
 │    ├── guardrails/     Hard-limit & role validation         │
-│    ├── keeperhub/      MCP / HTTP client to KeeperHub       │
-│    ├── poller/         6-hour scheduled loop                │
+│    ├── keeperhub/      REST (default) + optional MCP client  │
+│    ├── poller/         6-hour scheduled loop (Phase 6)      │
 │    └── audit/          Writes structured records to Supabase│
 │                                                             │
 │  NEVER imports from frontend components or server actions   │
 └────────────────────────────┬────────────────────────────────┘
-                             │ Workflow payload
+                             │ REST or MCP execute (org workflow only)
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              KeeperHub + Turnkey MPC                        │
-│  - Organization API key scopes Operators                    │
-│  - Workflow contains hard limits & allowed contracts        │
+│  - Org API key (kh_); pinned KEEPERHUB_WORKFLOW_ID          │
+│  - Workflow nodes (human-built) hold contracts / limits     │
 │  - Turnkey signs under policy – agent never sees keys       │
+│  - No marketplace / x402 on product path                    │
 └────────────────────────────┬────────────────────────────────┘
-                             │ signed tx
+                             │ signed tx (if workflow has write steps)
                              ▼
                     Aave V3 Pool (Base / Eth Sepolia)
 ```
+
+### KeeperHub surfaces (what the product uses)
+
+| Surface | Product agent | Notes |
+|---------|---------------|--------|
+| REST execute + poll | **Yes (default)** | `keeperhub/client.ts` |
+| MCP `execute_workflow` / `get_execution` | **Optional** | `KEEPERHUB_TRANSPORT=mcp` |
+| Org workflow list (REST) | Ops CLI | `list-workflows` |
+| External `kh` CLI | Ops optional | Not required to run agent |
+| MCP `create_workflow` / `update_workflow` | **No** | Would expand product surface; keep out of Soft Rebalance path |
+| Marketplace / x402 / MPP | **No** | Explicit non-goal |
+
+Decision order (always): **formula → Gemini (assist) → guardrails → KeeperHub execute → audit**.
 
 ### Strict Separation Rules (Non-Negotiable)
 
