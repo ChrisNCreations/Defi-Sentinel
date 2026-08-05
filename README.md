@@ -48,28 +48,6 @@ pnpm --filter agent decide -- --wallet 0xYourAddress --network base-sepolia
 pnpm --filter agent decide -- --mock-hf 1.15
 ```
 
-Copy env templates (do not commit real secrets):
-
-```bash
-cp apps/web/.env.example apps/web/.env.local
-cp apps/agent/.env.example apps/agent/.env
-```
-
-### Phase 1 — Auth & DB
-
-```bash
-# Requires Docker + Supabase CLI
-supabase start
-supabase db reset   # applies migrations 001–004 + seed wallets
-
-# Copy URL / anon / service_role keys from `supabase start` into:
-#   apps/web/.env.local  (NEXT_PUBLIC_* + SUPABASE_SERVICE_ROLE_KEY + AUTH_SECRET)
-#   apps/agent/.env      (SUPABASE_* for later phases)
-
-pnpm --filter agent seed-roles   # print seeded Admin / Operator / Viewer addresses
-pnpm dev                         # open /login → connect seed wallet → SIWE
-```
-
 
 Viewers can open `/dashboard` but are denied `/audit` and `/actions` (middleware + RLS).  
 Admin / Operator are never auto-assigned; only seed or explicit membership grants those roles.
@@ -96,11 +74,6 @@ Admin / Operator are never auto-assigned; only seed or explicit membership grant
 
 ## Deployment (testnet)
 
-| Component | Host | Env notes |
-|-----------|------|-----------|
-| `apps/web` | **Vercel** | `NEXT_PUBLIC_SUPABASE_*`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` only |
-| `apps/agent` | Fly.io / Railway / VPS | Service role, Gemini, KeeperHub, RPC — never public |
-| Supabase | Hosted free tier | Auth + RLS + audit |
 
 **Never** put `SUPABASE_SERVICE_ROLE_KEY` in the browser or public Vercel env.
 
