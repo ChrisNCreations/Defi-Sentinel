@@ -1,4 +1,9 @@
-import { EXECUTION_ROLES, isRole, type Role } from '@defi-sentinel/shared'
+import {
+  EXECUTION_ROLES,
+  pickMembership,
+  resolveDefaultOrganizationId,
+  type Role,
+} from '@defi-sentinel/shared'
 import { getServiceSupabase } from '../supabase/client'
 
 export type RoleCheckReason = 'WALLET_NOT_FOUND' | 'ROLE_INSUFFICIENT'
@@ -16,18 +21,18 @@ export type MemberLookup = (
 
 async function defaultLookup(walletAddress: string) {
   const supabase = getServiceSupabase()
+  const defaultOrgId = resolveDefaultOrganizationId(process.env.DEFAULT_ORGANIZATION_ID)
+  // List all rows — multi-org wallets break maybeSingle (PGRST116).
   const { data, error } = await supabase
     .from('organization_members')
     .select('role, organization_id')
     .eq('wallet_address', walletAddress.toLowerCase())
-    .maybeSingle()
 
   if (error) {
     console.error('[role-validator] lookup error', error.message)
     return null
   }
-  if (!data || !isRole(data.role)) return null
-  return { role: data.role as Role, organization_id: data.organization_id as string }
+  return pickMembership(data, defaultOrgId)
 }
 
 /**

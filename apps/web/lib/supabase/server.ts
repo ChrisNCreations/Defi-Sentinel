@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Role } from '@defi-sentinel/shared'
+import { resolveMembershipForWallet } from '@/lib/supabase/membership'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -40,6 +41,7 @@ export interface SessionAndRole {
 /**
  * Resolve authenticated user → profile wallet → organization membership role.
  * Returns null when unauthenticated or not a member of any org.
+ * Membership is resolved via service role (avoids recursive RLS on org_members).
  */
 export async function getSessionAndRole(): Promise<SessionAndRole | null> {
   const supabase = await createClient()
@@ -57,18 +59,13 @@ export async function getSessionAndRole(): Promise<SessionAndRole | null> {
 
   if (!profile?.wallet_address) return null
 
-  const { data: membership } = await supabase
-    .from('organization_members')
-    .select('role, organization_id')
-    .eq('wallet_address', profile.wallet_address.toLowerCase())
-    .maybeSingle()
-
-  if (!membership?.role || !membership.organization_id) return null
+  const membership = await resolveMembershipForWallet(profile.wallet_address)
+  if (!membership) return null
 
   return {
     userId: user.id,
     wallet: profile.wallet_address,
-    role: membership.role as Role,
+    role: membership.role,
     organizationId: membership.organization_id,
     displayName: profile.display_name,
   }
@@ -81,8 +78,11 @@ export function roleHomePath(role: Role): string {
 }
 
 export function canAccessPath(role: Role, pathname: string): boolean {
-  if (pathname.startsWith('/admin') || pathname.startsWith('/team')) {
+  if (pathname.startsWith('/admin')) {
     return role === 'admin'
+  }
+  if (pathname.startsWith('/team')) {
+    return true
   }
   if (pathname.startsWith('/audit') || pathname.startsWith('/actions')) {
     return role === 'admin' || role === 'operator'

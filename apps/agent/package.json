@@ -9,6 +9,7 @@
     "once": "tsx src/index.ts --once",
     "once-cycle": "tsx src/index.ts --once-cycle",
     "poll": "tsx src/index.ts --poll",
+    "serve": "tsx src/index.ts --serve",
     "decide": "tsx src/index.ts --decide",
     "force-soft": "tsx src/index.ts --force-soft",
     "force-safe": "tsx src/index.ts --force-safe",

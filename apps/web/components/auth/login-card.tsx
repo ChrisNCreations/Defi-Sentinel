@@ -5,9 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useChainId, useSignMessage } from 'wagmi'
 import { getAddress } from 'viem'
-import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@defi-sentinel/shared'
+import { ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { SentinelLogo } from '@/components/layout/sentinel-logo'
 import { buildSiweMessage } from '@/lib/auth/siwe-client'
 
 type Status = 'idle' | 'signing' | 'verifying' | 'success' | 'error'
@@ -75,7 +76,6 @@ export function LoginCard() {
   // Auto-prompt SIWE once connected
   useEffect(() => {
     if (isConnected && address && status === 'idle') {
-      // wait a tick so RainbowKit finishes
       const t = setTimeout(() => {
         void signIn()
       }, 400)
@@ -84,64 +84,60 @@ export function LoginCard() {
   }, [isConnected, address, status, signIn])
 
   return (
-    <>
-      <div className="relative z-10 mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-cobalt text-lg font-semibold text-white shadow-soft">
-          DS
+    <Card className="border-0 shadow-subtle">
+      <CardContent className="space-y-6 p-8">
+        {/* Brand mark */}
+        <div className="flex justify-center">
+          <SentinelLogo className="h-16 w-16" />
         </div>
-        <h1 className="text-2xl font-semibold text-ink">{PRODUCT_NAME}</h1>
-        <p className="mt-1 max-w-sm text-sm text-slate">{PRODUCT_TAGLINE}</p>
-      </div>
 
-      <Card className="relative z-10 w-full max-w-[420px] border-0 shadow-subtle">
-        <CardContent className="p-8">
-          <p className="text-center text-base text-ink">Connect your wallet to continue</p>
-          <p className="mt-2 text-center text-sm text-slate">
-            Anyone can connect for a read-only dashboard. Admins and Operators keep their
-            privileged roles.
+        {/* Title */}
+        <div className="text-center">
+          <p className="text-xl font-semibold text-ink">Secure wallet sign-in</p>
+          <p className="mt-2 text-sm text-slate">Choose your preferred wallet to continue</p>
+        </div>
+
+        {/* Connect button */}
+        <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+
+        {/* Sign in button */}
+        {isConnected && (
+          <Button
+            type="button"
+            className="w-full"
+            disabled={status === 'signing' || status === 'verifying' || status === 'success'}
+            onClick={() => {
+              setStatus('idle')
+              void signIn()
+            }}
+          >
+            {status === 'signing' && 'Check wallet to sign…'}
+            {status === 'verifying' && 'Verifying signature…'}
+            {status === 'success' && 'Redirecting…'}
+            {(status === 'idle' || status === 'error') && 'Sign in with Ethereum'}
+          </Button>
+        )}
+
+        {/* Error message */}
+        {(error || urlError) && (
+          <p className="rounded-badge bg-danger/10 px-3 py-2 text-center text-sm text-danger">
+            {error ??
+              (urlError === 'access_denied'
+                ? 'Could not complete sign-in. Try connecting again.'
+                : urlError === 'no_profile'
+                  ? 'Profile missing — please sign in again.'
+                  : 'Authentication error.')}
           </p>
+        )}
 
-          <div className="mt-8 flex flex-col items-center gap-3">
-            <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
-
-            {isConnected && (
-              <Button
-                type="button"
-                className="w-full"
-                disabled={status === 'signing' || status === 'verifying' || status === 'success'}
-                onClick={() => {
-                  setStatus('idle')
-                  void signIn()
-                }}
-              >
-                {status === 'signing' && 'Check wallet to sign…'}
-                {status === 'verifying' && 'Verifying signature…'}
-                {status === 'success' && 'Redirecting…'}
-                {(status === 'idle' || status === 'error') && 'Sign in with Ethereum'}
-              </Button>
-            )}
-          </div>
-
-          {(error || urlError) && (
-            <p className="mt-6 rounded-badge bg-danger/10 px-3 py-2 text-center text-sm text-danger">
-              {error ??
-                (urlError === 'access_denied'
-                  ? 'Could not complete sign-in. Try connecting again.'
-                  : urlError === 'no_profile'
-                    ? 'Profile missing — please sign in again.'
-                    : 'Authentication error.')}
-            </p>
-          )}
-
-          <p className="mt-6 text-center text-xs text-steel">
-            Public wallets join as Viewer. Admin / Operator are assigned separately.
+        {/* Security note */}
+        <div className="flex items-start gap-3 rounded-card border border-hairline bg-ivory p-4">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-cobalt" />
+          <p className="text-xs text-slate">
+            You will be asked to sign a message to verify ownership and continue securely.
           </p>
-        </CardContent>
-      </Card>
-
-      <p className="relative z-10 mt-8 text-center text-sm text-slate">
-        Supported: Base Sepolia / Ethereum Sepolia
-      </p>
-    </>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

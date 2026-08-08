@@ -28,6 +28,7 @@ export type AgentMode =
   | 'doctor'
   | 'list-workflows'
   | 'kh'
+  | 'serve'
 
 const DEFAULT_RPC: Record<NetworkId, string> = {
   'base-sepolia': 'https://sepolia.base.org',
@@ -109,6 +110,10 @@ export function parseCliArgs(argv: string[]): {
     argv.includes('--poll') ||
     argv.includes('poll') ||
     argv.includes('--daemon')
+  const serve =
+    argv.includes('--serve') ||
+    argv.includes('serve') ||
+    argv.includes('--http')
   const idle = argv.includes('--idle')
   const decide = argv.includes('--decide') || argv.includes('decide')
   const forceSoft = argv.includes('--force-soft') || argv.includes('force-soft')
@@ -123,10 +128,12 @@ export function parseCliArgs(argv: string[]): {
   const khIdx = argv.findIndex((a) => a === 'kh' || a === '--kh')
 
   // Default long-running mode is poll (Phase 6). Use --idle to park without scheduler.
+  // Use --serve for Phase 7 HTTP API (web manual actions).
   let mode: AgentMode = 'poll'
   if (doctor) mode = 'doctor'
   else if (listWorkflows) mode = 'list-workflows'
   else if (khIdx >= 0) mode = 'kh'
+  else if (serve) mode = 'serve'
   else if (chat) mode = 'chat'
   else if (forceSoft) mode = 'force-soft'
   else if (forceSafe) mode = 'force-safe'

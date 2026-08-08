@@ -62,6 +62,7 @@ Admin / Operator are never auto-assigned; only seed or explicit membership grant
 | `pnpm dev` | Start web app |
 | `pnpm dev:agent` | Start agent poller (Phase 6) |
 | `pnpm --filter agent once-cycle -- --wallet 0x… --org <id>` | Single scheduled cycle then exit |
+| `pnpm --filter agent serve` | Phase 7 HTTP API for UI actions (`:8787`) |
 | `pnpm --filter agent decide -- --wallet 0x…` | Read Aave position + print formula decision |
 | `pnpm --filter agent force-soft -- --actor 0x…` | Guardrails + KeeperHub execute (Turnkey remote) |
 | `pnpm --filter agent force-soft -- --actor 0x… --dry-run-keeper` | Guardrails + payload only (no KH call) |

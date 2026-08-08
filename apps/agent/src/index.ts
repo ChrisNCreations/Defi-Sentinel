@@ -16,6 +16,7 @@ import { runDoctor, runListWorkflows } from './keeperhub/doctor'
 import { runKhCli } from './keeperhub/kh-cli'
 import { formatInterval, resolvePollIntervalMs, startScheduler } from './poller/scheduler'
 import { runPollerTick } from './poller/tick'
+import { startHttpServer } from './serve'
 
 /**
  * Agent entry — Phase 6: default daemon runs the 6h poller.
@@ -46,6 +47,17 @@ async function main() {
 
   if (args.mode === 'kh') {
     process.exitCode = runKhCli(args.khArgs)
+    return
+  }
+
+  if (args.mode === 'serve') {
+    const port = Number(process.env.AGENT_HTTP_PORT ?? process.env.PORT ?? 8787)
+    const host = process.env.AGENT_HTTP_HOST ?? '127.0.0.1'
+    const secret = process.env.AGENT_INTERNAL_SECRET
+    const handle = await startHttpServer({ port, host, secret })
+    await waitForShutdown(() => {
+      void handle.close()
+    })
     return
   }
 

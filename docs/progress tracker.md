@@ -85,6 +85,17 @@
 - [x] Soft RPC failures do not kill the process
 - [x] Unit tests for scheduler + cycle
 
-## Phase 7+
+## Phase 7 – Frontend Pages (Full UI)
+
+- [x] Dashboard: HF ring, metrics, circuit, recent audit, operator console
+- [x] Actions page: NL + force soft / safe-exit via agent HTTP
+- [x] Audit: filters + expandable payload rows
+- [x] Admin: hard limits form, members, circuit reset, notifications note
+- [x] Team: roster for all roles (migration 005)
+- [x] API routes: `/api/status`, `/api/actions`, `/api/audit`, `/api/admin/*`, `/api/team`
+- [x] Agent `--serve` (`GET /v1/health|status`, `POST /v1/actions`)
+- [x] Role-based nav + 15s dashboard polling
+
+## Phase 8+
 
 See `docs/Build phase.md`.

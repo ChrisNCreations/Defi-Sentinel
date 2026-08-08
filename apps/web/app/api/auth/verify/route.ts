@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { SiweMessage } from 'siwe'
 import {
-  DEFAULT_ORGANIZATION_ID,
   isPrivilegedRole,
-  isRole,
+  pickMembership,
+  resolveDefaultOrganizationId,
   type Role,
 } from '@defi-sentinel/shared'
 import {
@@ -20,40 +20,34 @@ import { consumeNonce } from '@/lib/auth/nonce-store'
  * Resolve org membership for a wallet after SIWE.
  * - admin / operator: must already be in organization_members (seed or admin-managed)
  * - everyone else: public viewer — auto-enrolled on the default org
+ * - multi-org wallets: pick privileged + preferred default org (not maybeSingle)
  */
 async function resolveMembership(
   admin: ReturnType<typeof createAdminClient>,
   address: string,
 ): Promise<{ role: Role; organization_id: string } | { error: string; status: number }> {
-  const defaultOrgId =
-    process.env.DEFAULT_ORGANIZATION_ID?.trim() || DEFAULT_ORGANIZATION_ID
+  const defaultOrgId = resolveDefaultOrganizationId(process.env.DEFAULT_ORGANIZATION_ID)
 
-  const { data: membership, error: memberError } = await admin
+  // List all memberships — a wallet may belong to multiple orgs.
+  const { data: rows, error: memberError } = await admin
     .from('organization_members')
     .select('role, organization_id')
     .eq('wallet_address', address)
-    .maybeSingle()
 
   if (memberError) {
     console.error('[auth/verify] membership lookup', memberError)
     return { error: 'MEMBERSHIP_LOOKUP_FAILED', status: 500 }
   }
 
-  if (membership?.role && isRole(membership.role) && isPrivilegedRole(membership.role)) {
-    return {
-      role: membership.role,
-      organization_id: membership.organization_id as string,
-    }
+  const membership = pickMembership(rows, defaultOrgId)
+  if (membership && isPrivilegedRole(membership.role)) {
+    return membership
+  }
+  if (membership?.role === 'viewer') {
+    return membership
   }
 
-  // Existing viewer row or no row → public viewer on default org
-  if (membership?.role === 'viewer' && membership.organization_id) {
-    return {
-      role: 'viewer',
-      organization_id: membership.organization_id as string,
-    }
-  }
-
+  // No row → public viewer auto-enroll on default org
   const { error: upsertError } = await admin.from('organization_members').upsert(
     {
       organization_id: defaultOrgId,

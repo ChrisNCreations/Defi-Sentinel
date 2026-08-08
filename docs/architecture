@@ -50,7 +50,9 @@ This document is the single source of truth for the technical architecture. It i
 │    ├── formula/        Pure HF → action engine              │
 │    ├── guardrails/     Hard-limit & role validation         │
 │    ├── keeperhub/      REST (default) + optional MCP client  │
-│    ├── poller/         6-hour scheduled loop (Phase 6)      │
+│    ├── poller/         6-hour scheduled loop (Phase 6 ✓)    │
+│    ├── cycle/          Shared formula→brain→guardrails→KH   │
+│    ├── serve.ts        HTTP API for web UI actions (Phase 7)│
 │    └── audit/          Writes structured records to Supabase│
 │                                                             │
 │  NEVER imports from frontend components or server actions   │

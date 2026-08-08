@@ -115,9 +115,16 @@ supabase start
 pnpm --filter web dev
 # → http://localhost:3000
 
-# Terminal 3 – Agent daemon
-pnpm --filter agent dev
+# Terminal 3 – Agent HTTP API for UI actions (Phase 7)
+pnpm --filter agent serve
+# → http://127.0.0.1:8787
+
+# Terminal 4 (optional) – Agent poller (Phase 6; needs TARGET_WALLET + ORGANIZATION_ID)
+pnpm --filter agent poll
 ```
+
+Web `.env.local` must include `AGENT_BASE_URL=http://127.0.0.1:8787` for manual actions.
+
 
 ### Useful individual commands
 
@@ -130,6 +137,15 @@ pnpm lint
 
 # Run agent once (formula + guardrail self-check)
 pnpm --filter agent once
+
+# Single scheduled cycle (no long-running loop)
+pnpm --filter agent once-cycle -- --wallet 0x… --org <uuid> --mock-hf 1.5 --dry-run-keeper
+
+# Long-running poller with short interval for demos
+# POLL_INTERVAL_MS=30000 pnpm --filter agent poll -- --wallet 0x… --org <uuid> --mock-hf 1.5 --dry-run-keeper
+
+# Park without scheduler
+pnpm --filter agent dev -- --idle
 
 # Health check: env, REST, optional MCP, RPC
 pnpm --filter agent agent-doctor
@@ -268,6 +284,8 @@ Change the RPC URL and Aave Pool address in the agent `.env`. The frontend chain
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
 | SIWE login fails | Wrong WalletConnect project ID or Supabase keys | Double-check `.env.local`; URL must not end with `/rest/v1/` |
+| `MEMBERSHIP_LOOKUP_FAILED` | Wallet in multiple orgs + old `.maybeSingle()` lookup | Use list + `pickMembership`; set `DEFAULT_ORGANIZATION_ID` to preferred org |
+| `access_denied` after SIWE / “Could not complete sign-in” | Recursive RLS on `organization_members` (42P17) | Apply `006_fix_org_members_rls_recursion.sql` in Supabase SQL editor; app also uses service-role membership after JWT |
 | Agent says `ROLE_INSUFFICIENT` | Actor not admin/operator | Seed or promote wallet; viewers cannot execute |
 | KH execute succeeds, no `tx_hash` | Workflow has no on-chain write steps | Add Aave repay nodes in KeeperHub builder |
 | MCP fails | Transport/protocol or tool names | Use `--transport rest` or `KEEPERHUB_MCP_FALLBACK_REST=1` |

@@ -160,12 +160,14 @@ A coding assistant should complete one phase fully (including basic tests) befor
 **Goal:** Complete operator and admin experience.
 
 ### Tasks
-- [ ] `/dashboard` – live HF, collateral, debt, circuit status, next poll, natural-language box + Force Soft / Force Safe-Exit buttons 
-- [ ] `/audit` – filterable table + expandable row with full payload
-- [ ] `/admin` – hard limits form, member management, circuit reset, Discord webhook
-- [ ] `/team` – simple role list
-- [ ] Real-time status updates (polling or Supabase realtime) after manual actions
-- [ ] Role-based UI (hide buttons the user cannot use)
+- [x] `/dashboard` – live HF, collateral, debt, circuit status, next poll, natural-language box + Force Soft / Force Safe-Exit buttons 
+- [x] `/audit` – filterable table + expandable row with full payload
+- [x] `/admin` – hard limits form, member management, circuit reset, Discord webhook notes
+- [x] `/team` – simple role list (all authenticated roles)
+- [x] Real-time status updates (15s polling) after manual actions
+- [x] Role-based UI (hide buttons the user cannot use)
+- [x] Agent HTTP `serve` mode + web `AGENT_BASE_URL` proxy for manual actions
+- [x] Migration `005` – all members can read org roster
 
 ### Exit Criteria
 - Every role sees exactly the correct UI

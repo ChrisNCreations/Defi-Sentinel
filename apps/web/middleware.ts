@@ -1,6 +1,11 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
-import type { Role } from '@defi-sentinel/shared'
+import {
+  pickMembership,
+  resolveDefaultOrganizationId,
+  type Role,
+} from '@defi-sentinel/shared'
 
 const PROTECTED_PREFIXES = ['/dashboard', '/actions', '/audit', '/admin', '/team']
 
@@ -9,13 +14,43 @@ function isProtected(pathname: string) {
 }
 
 function canAccess(role: Role, pathname: string): boolean {
-  if (pathname.startsWith('/admin') || pathname.startsWith('/team')) {
+  // Admin-only settings
+  if (pathname.startsWith('/admin')) {
     return role === 'admin'
+  }
+  // Team roster is visible to all authenticated members (Phase 7)
+  if (pathname.startsWith('/team')) {
+    return true
   }
   if (pathname.startsWith('/audit') || pathname.startsWith('/actions')) {
     return role === 'admin' || role === 'operator'
   }
   return true
+}
+
+/**
+ * Membership via service role (bypasses recursive RLS on organization_members).
+ * Inline for Edge middleware — avoid importing server-only modules.
+ */
+async function membershipForWallet(wallet: string) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+
+  const admin = createSupabaseClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const defaultOrgId = resolveDefaultOrganizationId(process.env.DEFAULT_ORGANIZATION_ID)
+  const { data: rows, error } = await admin
+    .from('organization_members')
+    .select('role, organization_id')
+    .eq('wallet_address', wallet.toLowerCase())
+
+  if (error) {
+    console.error('[middleware] membership lookup', error.message)
+    return null
+  }
+  return pickMembership(rows, defaultOrgId)
 }
 
 export async function middleware(request: NextRequest) {
@@ -58,12 +93,7 @@ export async function middleware(request: NextRequest) {
       .maybeSingle()
 
     if (profile?.wallet_address) {
-      const { data: membership } = await supabase
-        .from('organization_members')
-        .select('role')
-        .eq('wallet_address', profile.wallet_address)
-        .maybeSingle()
-
+      const membership = await membershipForWallet(profile.wallet_address)
       if (membership?.role) {
         const dest = membership.role === 'admin' ? '/admin' : '/dashboard'
         return NextResponse.redirect(new URL(dest, request.url))
@@ -88,17 +118,12 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login?error=no_profile', request.url))
     }
 
-    const { data: membership } = await supabase
-      .from('organization_members')
-      .select('role')
-      .eq('wallet_address', profile.wallet_address)
-      .maybeSingle()
-
+    const membership = await membershipForWallet(profile.wallet_address)
     if (!membership?.role) {
       return NextResponse.redirect(new URL('/login?error=access_denied', request.url))
     }
 
-    const role = membership.role as Role
+    const role = membership.role
     if (!canAccess(role, pathname)) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
